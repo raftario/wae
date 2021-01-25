@@ -57,7 +57,13 @@ jobs:
               uses: actions-rs/clippy-check@v1
               with:
                   token: ${{ secrets.GITHUB_TOKEN }}
-                  args: --all -- -D warnings
+                  args: -- -D warnings
+            - name: Check for clippy warnings (all)
+              uses: actions-rs/clippy-check@v1
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  args: --all --all-features -- -D warnings
+
             - name: Check formatting
               uses: actions-rs/cargo@v1
               with:
