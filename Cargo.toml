@@ -1,0 +1,59 @@
+[package]
+name = "wae"
+version = "0.1.0"
+authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
+edition = "2018"
+description = "An async executor based on the Win32 thread pool API"
+readme = "README.md"
+repository = "https://github.com/raftario/wae.git"
+license = "Apache-2.0"
+keywords = ["win32", "windows", "async", "executor"]
+categories = ["asynchronous", "concurrency"]
+include = [".github/"]
+
+[workspace]
+members = ["macros"]
+
+[dependencies]
+async-task = "4.0"
+waker-fn = "1.1"
+pin-utils = "0.1"
+pin-project-lite = "0.2"
+parking = "2.0"
+[dependencies.wae-macros]
+path = "macros"
+optional = true
+[dependencies.winapi]
+version = "0.3.9"
+features = [
+    "std",
+    "threadpoolapiset",
+    "errhandlingapi",
+    "sysinfoapi",
+    "winnt",
+    "winbase",
+    "minwindef",
+    "impl-default",
+]
+[dependencies.tracing]
+version = "0.1"
+features = ["std"]
+default-features = false
+optional = true
+[dependencies.parking_lot]
+version = "0.11"
+optional = true
+
+[features]
+default = []
+macros = ["wae-macros"]
+
+[dev-dependencies]
+futures = "0.3"
+[dev-dependencies.wae-macros]
+path = "macros"
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
+features = ["macros"]
