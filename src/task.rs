@@ -23,6 +23,7 @@ use crate::{
 };
 
 pin_project! {
+    #[must_use = "tasks get canceled when dropped, use `.detach()` to run them in the background"]
     pub struct Task<T> {
         #[pin]
         task: async_task_ffi::Task<T>,
