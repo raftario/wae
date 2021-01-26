@@ -45,7 +45,6 @@ impl Threadpool {
         Builder::default()
     }
 
-    #[inline]
     pub fn handle(&self) -> &Handle {
         &self.handle
     }

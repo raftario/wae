@@ -1,11 +1,13 @@
 use std::{
     cell::RefCell,
+    ffi::c_void,
     future::Future,
+    mem::MaybeUninit,
     pin::Pin,
     task::{Context, Poll, Waker},
 };
 
-use async_task::Task;
+use async_task_ffi::Runnable;
 use parking::Parker;
 use pin_project_lite::pin_project;
 use pin_utils::pin_mut;
@@ -21,67 +23,64 @@ use crate::{
 };
 
 pin_project! {
-    pub struct JoinHandle<T> {
+    pub struct Task<T> {
         #[pin]
-        task: Task<T>,
+        task: async_task_ffi::Task<T>,
     }
 }
 
-impl<T> Future for JoinHandle<T> {
+impl<T> Future for Task<T> {
     type Output = T;
 
-    #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         self.project().task.poll(cx)
     }
 }
 
-impl<T> JoinHandle<T> {
-    #[inline]
+impl<T> Task<T> {
     pub fn detach(self) {
         self.task.detach()
     }
 
-    #[inline]
     pub async fn cancel(self) -> Option<T> {
         self.task.cancel().await
     }
 }
 
 impl Handle {
-    pub fn spawn<T, F>(&self, future: F) -> JoinHandle<T>
+    pub fn spawn<T, F>(&self, future: F) -> Task<T>
     where
         T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
     {
+        #[cfg(not(feature = "tracing"))]
         let handle = self.clone();
-        let schedule = move |runnable| {
-            #[cfg(not(feature = "tracing"))]
-            let handle = handle.clone();
-            #[cfg(feature = "tracing")]
-            let mut handle = handle.clone();
-            #[cfg(feature = "tracing")]
-            {
-                handle.span = match handle.span {
-                    Some(parent) => Some(tracing::trace_span!(
-                        parent: parent,
-                        "task",
-                        pool = ?handle.callback_environ.Pool
-                    )),
-                    None => {
-                        Some(tracing::trace_span!("task", pool = ?handle.callback_environ.Pool))
-                    }
-                }
+        #[cfg(feature = "tracing")]
+        let mut handle = self.clone();
+        #[cfg(feature = "tracing")]
+        {
+            handle.span = match handle.span {
+                Some(parent) => Some(tracing::trace_span!(
+                    parent: parent,
+                    "task",
+                    pool = ?handle.callback_environ.Pool
+                )),
+                None => Some(tracing::trace_span!("task", pool = ?handle.callback_environ.Pool)),
             }
+        }
 
+        let schedule = move |mut runnable: Runnable<MaybeUninit<CallbackContext>>| {
+            let handle = handle.clone();
             let mut callback_environ = handle.callback_environ;
-            let context = CallbackContext { runnable, handle };
-            let context = Box::into_raw(Box::new(context));
 
             unsafe {
+                let context = CallbackContext { handle };
+                runnable.data_mut().as_mut_ptr().write(context);
+                let runnable = runnable.into_raw();
+
                 let work = CreateThreadpoolWork(
                     Some(crate::callback::callback),
-                    context as _,
+                    runnable as *mut c_void,
                     &mut callback_environ,
                 );
                 if work.is_null() {
@@ -92,10 +91,10 @@ impl Handle {
             }
         };
 
-        let (runnable, task) = async_task::spawn(future, schedule);
+        let (runnable, task) = async_task_ffi::spawn_with(future, schedule, MaybeUninit::uninit());
         runnable.schedule();
 
-        JoinHandle { task }
+        Task { task }
     }
 
     pub fn block_on<T, F>(&self, future: F) -> Result<T, Error>
@@ -140,8 +139,7 @@ impl Handle {
 }
 
 impl Threadpool {
-    #[inline]
-    pub fn spawn<T, F>(&self, future: F) -> JoinHandle<T>
+    pub fn spawn<T, F>(&self, future: F) -> Task<T>
     where
         T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
@@ -149,7 +147,6 @@ impl Threadpool {
         self.handle().spawn(future)
     }
 
-    #[inline]
     pub fn block_on<T, F>(&self, future: F) -> Result<T, Error>
     where
         T: Send + 'static,
@@ -159,8 +156,8 @@ impl Threadpool {
     }
 }
 
-#[inline]
-pub fn spawn<T, F>(future: F) -> JoinHandle<T>
+#[track_caller]
+pub fn spawn<T, F>(future: F) -> Task<T>
 where
     T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
@@ -168,7 +165,7 @@ where
     Handle::current().spawn(future)
 }
 
-#[inline]
+#[track_caller]
 pub fn block_on<T, F>(future: F) -> Result<T, Error>
 where
     T: Send + 'static,
@@ -177,7 +174,7 @@ where
     Handle::current().block_on(future)
 }
 
-#[inline]
+#[track_caller]
 pub fn may_block() -> bool {
     Handle::current().may_block()
 }

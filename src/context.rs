@@ -9,8 +9,6 @@ thread_local! {
 pub struct ContextGuard<'a> {
     previous: Option<Handle>,
     _marker: PhantomData<&'a Handle>,
-    #[cfg(feature = "tracing")]
-    _span: Option<tracing::span::Entered<'a>>,
 }
 impl Drop for ContextGuard<'_> {
     fn drop(&mut self) {
@@ -25,7 +23,7 @@ impl Drop for ContextGuard<'_> {
 }
 
 impl Handle {
-    #[inline]
+    #[track_caller]
     pub fn current() -> Self {
         Self::try_current().unwrap()
     }
@@ -39,7 +37,7 @@ impl Handle {
         })
     }
 
-    #[inline]
+    #[track_caller]
     pub fn enter(&self) -> ContextGuard {
         self.try_enter().unwrap()
     }
@@ -51,9 +49,12 @@ impl Handle {
             Ok(ContextGuard {
                 previous,
                 _marker: PhantomData::default(),
-                #[cfg(feature = "tracing")]
-                _span: self.span.as_ref().map(|s| s.enter()),
             })
         })
+    }
+
+    #[cfg(feature = "tracing")]
+    pub(crate) fn enter_span(&self) -> Option<tracing::span::Entered> {
+        self.span.as_ref().map(|span| span.enter())
     }
 }
