@@ -1,7 +1,10 @@
-use std::{ffi::c_void, mem::MaybeUninit, panic};
+use std::{
+    ffi::c_void,
+    mem::MaybeUninit,
+    panic::{self, AssertUnwindSafe},
+};
 
 use async_task_ffi::Runnable;
-use panic::RefUnwindSafe;
 use winapi::um::winnt::{PTP_CALLBACK_INSTANCE, PTP_WORK};
 
 use crate::threadpool::Handle;
@@ -9,8 +12,6 @@ use crate::threadpool::Handle;
 pub struct CallbackContext {
     pub(crate) handle: Handle,
 }
-
-impl RefUnwindSafe for CallbackContext {}
 
 pub(crate) unsafe extern "system" fn callback(
     instance: PTP_CALLBACK_INSTANCE,
@@ -25,5 +26,5 @@ pub(crate) unsafe extern "system" fn callback(
     #[cfg(feature = "tracing")]
     let _span = handle.enter_span();
 
-    panic::catch_unwind(move || runnable.run()).ok();
+    panic::catch_unwind(AssertUnwindSafe(move || runnable.run())).ok();
 }
