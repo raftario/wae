@@ -13,10 +13,10 @@ use crate::{
 };
 
 impl Handle {
-    pub fn block_on<T, F>(&self, future: F) -> Result<T, Error>
+    pub fn block_on<F, T>(&self, future: F) -> Result<T, Error>
     where
-        T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
     {
         let future = self.spawn(future);
         pin_mut!(future);
@@ -48,19 +48,19 @@ impl Handle {
 }
 
 impl Threadpool {
-    pub fn block_on<T, F>(&self, future: F) -> Result<T, Error>
+    pub fn block_on<F, T>(&self, future: F) -> Result<T, Error>
     where
-        T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
     {
         self.handle().block_on(future)
     }
 }
 
-pub fn block_on<T, F>(future: F) -> Result<T, Error>
+pub fn block_on<F, T>(future: F) -> Result<T, Error>
 where
-    T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
+    T: Send + 'static,
 {
     Handle::current().block_on(future)
 }
