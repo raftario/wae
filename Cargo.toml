@@ -35,6 +35,12 @@ features = [
     "minwindef",
     "impl-default",
 ]
+[dependencies.futures-io]
+version = "0.3.12"
+optional = true
+[dependencies.tokio]
+version = "1.1.0"
+optional = true
 [dependencies.tracing]
 version = "0.1.22"
 features = ["std"]
@@ -46,6 +52,7 @@ optional = true
 
 [features]
 default = []
+net = ["winapi/winsock2", "winapi/ws2def", "futures-io"]
 macros = ["wae-macros"]
 
 [dev-dependencies]
