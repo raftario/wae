@@ -11,7 +11,7 @@ use async_task_ffi::Runnable;
 use pin_project_lite::pin_project;
 
 use winapi::um::{
-    threadpoolapiset::{CreateThreadpoolWork, SubmitThreadpoolWork},
+    threadpoolapiset::{CloseThreadpoolWork, CreateThreadpoolWork, SubmitThreadpoolWork},
     winnt::{PTP_CALLBACK_INSTANCE, PTP_WORK},
 };
 
@@ -22,13 +22,13 @@ use crate::{
 
 pin_project! {
     #[must_use = "tasks get canceled when dropped, use `.detach()` to run them in the background"]
-    pub struct Task<T> {
+    pub struct JoinHandle<T> {
         #[pin]
         task: async_task_ffi::Task<T>,
     }
 }
 
-impl<T> Future for Task<T> {
+impl<T> Future for JoinHandle<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -36,7 +36,7 @@ impl<T> Future for Task<T> {
     }
 }
 
-impl<T> Task<T> {
+impl<T> JoinHandle<T> {
     pub fn detach(self) {
         self.task.detach()
     }
@@ -53,7 +53,7 @@ struct CallbackContext {
 unsafe extern "system" fn callback(
     instance: PTP_CALLBACK_INSTANCE,
     context: *mut c_void,
-    _work: PTP_WORK,
+    work: PTP_WORK,
 ) {
     let runnable: Runnable<MaybeUninit<CallbackContext>> = Runnable::from_raw(context as *mut ());
     let CallbackContext { mut handle } = runnable.data().as_ptr().read();
@@ -64,13 +64,15 @@ unsafe extern "system" fn callback(
     let _span = handle.enter_span();
 
     panic::catch_unwind(AssertUnwindSafe(move || runnable.run())).ok();
+
+    CloseThreadpoolWork(work);
 }
 
 impl Handle {
-    pub fn spawn<T, F>(&self, future: F) -> Task<T>
+    pub fn spawn<F, T>(&self, future: F) -> JoinHandle<T>
     where
-        T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
     {
         #[cfg(not(feature = "tracing"))]
         let handle = self.clone();
@@ -103,7 +105,7 @@ impl Handle {
                     &mut callback_environ,
                 );
                 if work.is_null() {
-                    panic!(Error::win32());
+                    panic!("failed to schedule task: {}", Error::win32());
                 }
 
                 SubmitThreadpoolWork(work);
@@ -113,24 +115,24 @@ impl Handle {
         let (runnable, task) = async_task_ffi::spawn_with(future, schedule, MaybeUninit::uninit());
         runnable.schedule();
 
-        Task { task }
+        JoinHandle { task }
     }
 }
 
 impl Threadpool {
-    pub fn spawn<T, F>(&self, future: F) -> Task<T>
+    pub fn spawn<F, T>(&self, future: F) -> JoinHandle<T>
     where
-        T: Send + 'static,
         F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
     {
         self.handle().spawn(future)
     }
 }
 
-pub fn spawn<T, F>(future: F) -> Task<T>
+pub fn spawn<F, T>(future: F) -> JoinHandle<T>
 where
-    T: Send + 'static,
     F: Future<Output = T> + Send + 'static,
+    T: Send + 'static,
 {
     Handle::current().spawn(future)
 }

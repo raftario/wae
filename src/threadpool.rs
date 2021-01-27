@@ -1,15 +1,18 @@
-use std::{fmt, mem, ptr};
+use std::{cmp::Ordering, fmt, mem, ptr};
 
-use winapi::um::{
-    sysinfoapi::{GetSystemInfo, SYSTEM_INFO},
-    threadpoolapiset::{
-        CloseThreadpool, CloseThreadpoolCleanupGroup, CloseThreadpoolCleanupGroupMembers,
-        CreateThreadpool, CreateThreadpoolCleanupGroup, SetThreadpoolThreadMaximum,
-        SetThreadpoolThreadMinimum,
-    },
-    winnt::{
-        TP_CALLBACK_ENVIRON_V3_u, PTP_CALLBACK_INSTANCE, TP_CALLBACK_ENVIRON_V3,
-        TP_CALLBACK_PRIORITY_NORMAL,
+use winapi::{
+    shared::minwindef::FALSE,
+    um::{
+        sysinfoapi::{GetSystemInfo, SYSTEM_INFO},
+        threadpoolapiset::{
+            CloseThreadpool, CloseThreadpoolCleanupGroup, CloseThreadpoolCleanupGroupMembers,
+            CreateThreadpool, CreateThreadpoolCleanupGroup, SetThreadpoolThreadMaximum,
+            SetThreadpoolThreadMinimum,
+        },
+        winnt::{
+            TP_CALLBACK_ENVIRON_V3_u, PTP_CALLBACK_INSTANCE, TP_CALLBACK_ENVIRON_V3,
+            TP_CALLBACK_PRIORITY_HIGH, TP_CALLBACK_PRIORITY_LOW, TP_CALLBACK_PRIORITY_NORMAL,
+        },
     },
 };
 
@@ -61,12 +64,14 @@ impl Threadpool {
         })
     }
 
-    pub fn set_thread_maximum(&self, maximum: u32) {
-        self.handle.set_thread_maximum(maximum)
+    pub fn set_thread_maximum(&self, maximum: u32) -> &Self {
+        self.handle.set_thread_maximum(maximum);
+        self
     }
 
-    pub fn set_thread_minimum(&self, minimum: u32) {
-        self.handle.set_thread_minimum(minimum)
+    pub fn set_thread_minimum(&self, minimum: u32) -> &Self {
+        self.handle.set_thread_minimum(minimum);
+        self
     }
 }
 
@@ -94,20 +99,25 @@ impl Handle {
         self.callback_instance = Some(instance);
     }
 
-    pub fn set_thread_maximum(&self, maximum: u32) {
+    pub fn set_thread_maximum(&self, maximum: u32) -> &Self {
         unsafe { SetThreadpoolThreadMaximum(self.callback_environ.Pool, maximum) }
+        self
     }
 
-    pub fn set_thread_minimum(&self, minimum: u32) {
+    pub fn set_thread_minimum(&self, minimum: u32) -> &Self {
         self.try_set_thread_minimum(minimum).unwrap()
     }
 
-    pub fn try_set_thread_minimum(&self, minimum: u32) -> Result<(), Error> {
-        if unsafe { SetThreadpoolThreadMinimum(self.callback_environ.Pool, minimum) } == 0 {
+    pub fn try_set_thread_minimum(&self, minimum: u32) -> Result<&Self, Error> {
+        if unsafe { SetThreadpoolThreadMinimum(self.callback_environ.Pool, minimum) } == FALSE {
             return Err(Error::win32());
         }
+        Ok(self)
+    }
 
-        Ok(())
+    pub fn set_priority(&mut self, priority: Priority) -> &mut Self {
+        self.callback_environ.CallbackPriority = priority as u32;
+        self
     }
 }
 
@@ -162,9 +172,6 @@ impl Builder {
             return Err(Error::win32());
         }
 
-        // winnt.h :: TpInitializeCallbackEnviron
-        //            TpSetCallbackThreadpool
-        //            TpSetCallbackCleanupGroup
         let callback_environ = TP_CALLBACK_ENVIRON_V3 {
             Version: 3,
             Pool: pool,
@@ -174,7 +181,7 @@ impl Builder {
             ActivationContext: ptr::null_mut(),
             FinalizationCallback: None,
             u: TP_CALLBACK_ENVIRON_V3_u::default(),
-            CallbackPriority: TP_CALLBACK_PRIORITY_NORMAL,
+            CallbackPriority: Priority::Normal as u32,
             Size: mem::size_of::<TP_CALLBACK_ENVIRON_V3>() as u32,
         };
 
@@ -187,5 +194,33 @@ impl Builder {
             },
             close: Once::new(),
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum Priority {
+    High = TP_CALLBACK_PRIORITY_HIGH,
+    Normal = TP_CALLBACK_PRIORITY_NORMAL,
+    Low = TP_CALLBACK_PRIORITY_LOW,
+}
+
+macro_rules! priority_ord {
+    ($self:expr, $other:expr) => {
+        match ($self as u32).cmp(&($other as u32)) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        }
+    };
+}
+impl PartialOrd for Priority {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(priority_ord!(*self, *other))
+    }
+}
+impl Ord for Priority {
+    fn cmp(&self, other: &Self) -> Ordering {
+        priority_ord!(*self, *other)
     }
 }

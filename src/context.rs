@@ -23,7 +23,6 @@ impl Drop for ContextGuard<'_> {
 }
 
 impl Handle {
-    #[track_caller]
     pub fn current() -> Self {
         Self::try_current().unwrap()
     }
@@ -37,7 +36,6 @@ impl Handle {
         })
     }
 
-    #[track_caller]
     pub fn enter(&self) -> ContextGuard {
         self.try_enter().unwrap()
     }
