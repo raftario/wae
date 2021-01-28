@@ -2,9 +2,8 @@ use futures::{
     channel::{mpsc, oneshot},
     SinkExt, StreamExt,
 };
-use wae_macros::test;
 
-#[test]
+#[wae::test]
 async fn oneshot() {
     let (tx, rx) = oneshot::channel();
     let task = wae::spawn(async move {
@@ -15,7 +14,7 @@ async fn oneshot() {
     task.await;
 }
 
-#[test]
+#[wae::test]
 async fn mpsc() {
     let (mut tx1, rx) = mpsc::channel::<i32>(2);
     let mut tx2 = tx1.clone();

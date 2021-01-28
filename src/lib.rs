@@ -14,11 +14,11 @@ mod sync {
     #[cfg(not(feature = "parking_lot"))]
     pub(crate) use std::sync::Once;
 
-    #[cfg(feature = "parking_lot")]
+    #[cfg(all(feature = "parking_lot", any(feature = "net")))]
     pub(crate) use parking_lot::Mutex;
-    #[cfg(not(feature = "parking_lot"))]
+    #[cfg(all(not(feature = "parking_lot"), any(feature = "net")))]
     pub(crate) struct Mutex<T>(std::sync::Mutex<T>);
-    #[cfg(not(feature = "parking_lot"))]
+    #[cfg(all(not(feature = "parking_lot"), any(feature = "net")))]
     impl<T> Mutex<T> {
         pub(crate) fn new(t: T) -> Self {
             Self(std::sync::Mutex::new(t))
@@ -28,6 +28,15 @@ mod sync {
             self.0.lock().unwrap()
         }
     }
+}
+
+mod ohno {
+    #[cfg(any(feature = "net"))]
+    pub(crate) struct ForceSendSync<T>(pub(crate) T);
+    #[cfg(any(feature = "net"))]
+    unsafe impl<T> Send for ForceSendSync<T> {}
+    #[cfg(any(feature = "net"))]
+    unsafe impl<T> Sync for ForceSendSync<T> {}
 }
 
 pub use crate::{task::spawn, threadpool::Threadpool};

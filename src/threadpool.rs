@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt, mem, ptr};
+use std::{cmp::Ordering, fmt, io, mem, ptr};
 
 use winapi::{
     shared::minwindef::FALSE,
@@ -16,7 +16,7 @@ use winapi::{
     },
 };
 
-use crate::{error::Error, sync::Once};
+use crate::sync::Once;
 
 pub use crate::context::ContextGuard;
 
@@ -40,7 +40,7 @@ impl fmt::Debug for Threadpool {
 }
 
 impl Threadpool {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new() -> io::Result<Self> {
         Builder::default().build()
     }
 
@@ -108,9 +108,9 @@ impl Handle {
         self.try_set_thread_minimum(minimum).unwrap()
     }
 
-    pub fn try_set_thread_minimum(&self, minimum: u32) -> Result<&Self, Error> {
+    pub fn try_set_thread_minimum(&self, minimum: u32) -> io::Result<&Self> {
         if unsafe { SetThreadpoolThreadMinimum(self.callback_environ.Pool, minimum) } == FALSE {
-            return Err(Error::win32());
+            return Err(io::Error::last_os_error());
         }
         Ok(self)
     }
@@ -123,6 +123,8 @@ impl Handle {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Builder {
+    #[cfg(feature = "net")]
+    net: bool,
     thread_maximum: u32,
     thread_minimum: u32,
 }
@@ -133,6 +135,8 @@ impl Default for Builder {
         unsafe { GetSystemInfo(&mut system_info) };
 
         Self {
+            #[cfg(feature = "net")]
+            net: true,
             thread_maximum: 512,
             thread_minimum: system_info.dwNumberOfProcessors,
         }
@@ -154,22 +158,28 @@ impl Builder {
         self
     }
 
-    pub fn build(self) -> Result<Threadpool, Error> {
+    #[cfg(feature = "net")]
+    pub fn net(mut self, enabled: bool) -> Self {
+        self.net = enabled;
+        self
+    }
+
+    pub fn build(self) -> io::Result<Threadpool> {
         let pool = unsafe { CreateThreadpool(ptr::null_mut()) };
         if pool.is_null() {
-            return Err(Error::win32());
+            return Err(io::Error::last_os_error());
         }
 
         unsafe { SetThreadpoolThreadMaximum(pool, self.thread_maximum) };
-        if unsafe { SetThreadpoolThreadMinimum(pool, self.thread_minimum) } == 0 {
+        if unsafe { SetThreadpoolThreadMinimum(pool, self.thread_minimum) } == FALSE {
             unsafe { CloseThreadpool(pool) };
-            return Err(Error::win32());
+            return Err(io::Error::last_os_error());
         }
 
         let cleanup_group = unsafe { CreateThreadpoolCleanupGroup() };
         if cleanup_group.is_null() {
             unsafe { CloseThreadpool(pool) };
-            return Err(Error::win32());
+            return Err(io::Error::last_os_error());
         }
 
         let callback_environ = TP_CALLBACK_ENVIRON_V3 {
@@ -184,6 +194,16 @@ impl Builder {
             CallbackPriority: Priority::Normal as u32,
             Size: mem::size_of::<TP_CALLBACK_ENVIRON_V3>() as u32,
         };
+
+        #[cfg(feature = "net")]
+        if self.net {
+            let mut wsadata = winapi::um::winsock2::WSADATA::default();
+            let ret = unsafe { winapi::um::winsock2::WSAStartup(0x0202, &mut wsadata) };
+            if ret != 0 {
+                unsafe { CloseThreadpool(pool) };
+                return Err(io::Error::from_raw_os_error(ret));
+            }
+        }
 
         Ok(Threadpool {
             handle: Handle {

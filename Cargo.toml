@@ -41,6 +41,9 @@ optional = true
 [dependencies.tokio]
 version = "1.1.0"
 optional = true
+[dependencies.socket2]
+version = "0.3.19"
+optional = true
 [dependencies.tracing]
 version = "0.1.22"
 features = ["std"]
@@ -52,11 +55,23 @@ optional = true
 
 [features]
 default = []
-net = ["winapi/winsock2", "winapi/ws2def", "futures-io"]
+net = [
+    "winapi/winsock2",
+    "winapi/ws2tcpip",
+    "winapi/ws2def",
+    "winapi/ws2ipdef",
+    "winapi/inaddr",
+    "winapi/in6addr",
+    "winapi/synchapi",
+    "winapi/minwinbase",
+    "futures-io",
+    "socket2",
+]
 macros = ["wae-macros"]
 
 [dev-dependencies]
 futures = "0.3.12"
+hyper = { version = "0.14.2", features = ["client", "server", "http1"] }
 [dev-dependencies.wae-macros]
 path = "macros"
 
@@ -64,3 +79,16 @@ path = "macros"
 default-target = "x86_64-pc-windows-msvc"
 targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
 features = ["macros"]
+
+[[test]]
+name = "channels"
+path = "tests/channels.rs"
+required-features = ["macros"]
+[[test]]
+name = "tcp"
+path = "tests/tcp.rs"
+required-features = ["net", "macros"]
+[[test]]
+name = "http"
+path = "tests/http.rs"
+required-features = ["net", "macros", "tokio"]
