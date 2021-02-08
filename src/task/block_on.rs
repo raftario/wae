@@ -1,12 +1,11 @@
 use std::{
-    cell::RefCell,
     future::Future,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 
-use parking::Parker;
 use pin_utils::pin_mut;
 
+use crate::task::waker:InlineWaker;
 use crate::{
     error::Error,
     threadpool::{Handle, Threadpool},
@@ -21,29 +20,16 @@ impl Handle {
         let future = self.spawn(future);
         pin_mut!(future);
 
-        thread_local! {
-            static PARKING: RefCell<(Parker, Waker)> = {
-                let (parker, unparker) = parking::pair();
-                let waker = waker_fn::waker_fn(move || {
-                    unparker.unpark();
-                });
-                RefCell::new((parker, waker))
-            };
-        }
+        let inline_waker = InlineWaker::default();
+        let waker = inline_waker.get_waker();
+        let mut cx = Context::from_waker(&waker);
 
-        PARKING.with(|cache| {
-            let (parker, waker) = &mut *cache
-                .try_borrow_mut()
-                .map_err(|_| Error::RecursiveBlockOn)?;
-
-            let mut cx = Context::from_waker(&waker);
-            loop {
-                match future.as_mut().poll(&mut cx) {
-                    Poll::Ready(output) => return Ok(output),
-                    Poll::Pending => parker.park(),
-                }
+        loop {
+            match future.as_mut().poll(&mut cx) {
+                Poll::Ready(output) => return Ok(output),
+                Poll::Pending => inline_waker.wait(),
             }
-        })
+        }
     }
 }
 
