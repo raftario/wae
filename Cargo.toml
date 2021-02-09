@@ -61,10 +61,12 @@ net = [
     "winapi/ws2tcpip",
     "winapi/ws2def",
     "winapi/ws2ipdef",
+    "winapi/mswsock",
     "winapi/inaddr",
     "winapi/in6addr",
-    "winapi/synchapi",
+    "winapi/ioapiset",
     "winapi/minwinbase",
+    "winapi/winnt",
     "futures-io",
     "socket2",
 ]

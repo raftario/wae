@@ -5,7 +5,7 @@ use std::{
 
 use pin_utils::pin_mut;
 
-use crate::task::waker:InlineWaker;
+use crate::task::waker::InlineWaker;
 use crate::{
     error::Error,
     threadpool::{Handle, Threadpool},

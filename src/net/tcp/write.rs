@@ -7,67 +7,44 @@ use std::{
 
 use futures_io::AsyncWrite;
 use winapi::{
-    shared::ws2def::WSABUF,
-    um::winsock2::{send, shutdown, WSAGetLastError, WSASend, SD_SEND},
+    shared::{minwindef::TRUE, ws2def::WSABUF},
+    um::{
+        minwinbase::OVERLAPPED,
+        winsock2::{shutdown, WSAGetLastError, WSAGetOverlappedResult, WSASend, SD_SEND},
+    },
 };
 
-use super::TcpStream;
+use super::{TcpSocket, TcpStream};
 
-impl AsyncWrite for TcpStream {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
-        let mut lock = self.inner.write_waker.lock();
-        unsafe {
-            let sent = send(
-                self.inner.socket,
-                buf.as_ptr() as *const i8,
-                buf.len() as i32,
-                0,
-            );
-            match sent {
-                // SOCKET_ERROR
-                -1 => match WSAGetLastError() {
-                    // WSAEWOULDBLOCK
-                    10035 => {
-                        lock.replace(cx.waker().clone());
-                        Poll::Pending
-                    }
-                    err => Poll::Ready(Err(io::Error::from_raw_os_error(err))),
-                },
-                _ => Poll::Ready(Ok(sent as usize)),
-            }
+fn schedule(
+    socket: TcpSocket,
+    buf: *mut WSABUF,
+    overlapped: *mut OVERLAPPED,
+) -> Poll<io::Result<usize>> {
+    let ret = unsafe { WSASend(socket.0, buf, 1, ptr::null_mut(), 0, overlapped, None) };
+    if ret == 0 {
+        let mut sent = 0;
+        let mut flags = 0;
+        if unsafe { WSAGetOverlappedResult(socket.0, overlapped, &mut sent, TRUE, &mut flags) }
+            == TRUE
+        {
+            return Poll::Ready(Ok(sent as usize));
+        } else {
+            return Poll::Ready(Err(io::Error::last_os_error()));
         }
     }
 
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        bufs: &[io::IoSlice],
-    ) -> Poll<io::Result<usize>> {
-        let mut lock = self.inner.write_waker.lock();
-        unsafe {
-            let mut sent = 0;
-            let ret = WSASend(
-                self.inner.socket,
-                bufs.as_ptr() as *mut WSABUF,
-                bufs.len() as u32,
-                &mut sent,
-                0,
-                ptr::null_mut(),
-                None,
-            );
-            match ret {
-                // SOCKET_ERROR
-                -1 => match WSAGetLastError() {
-                    // WSAEWOULDBLOCK
-                    10035 => {
-                        lock.replace(cx.waker().clone());
-                        Poll::Pending
-                    }
-                    err => Poll::Ready(Err(io::Error::from_raw_os_error(err))),
-                },
-                _ => Poll::Ready(Ok(sent as usize)),
-            }
-        }
+    let err = unsafe { WSAGetLastError() };
+    match err {
+        // WSA_IO_PENDING
+        997 => Poll::Pending,
+        _ => Poll::Ready(Err(io::Error::from_raw_os_error(err))),
+    }
+}
+
+impl AsyncWrite for TcpStream {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
+        unsafe { self.inner.poll_write(cx, buf.as_ptr(), buf.len(), schedule) }
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
@@ -75,7 +52,7 @@ impl AsyncWrite for TcpStream {
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
-        match unsafe { shutdown(self.inner.socket, SD_SEND) } {
+        match unsafe { shutdown(self.inner.handle().0, SD_SEND) } {
             0 => Poll::Ready(Ok(())),
             _ => Poll::Ready(Err(io::Error::last_os_error())),
         }
@@ -89,28 +66,14 @@ impl tokio::io::AsyncWrite for TcpStream {
         cx: &mut Context,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        dbg!("write");
         AsyncWrite::poll_write(self, cx, buf)
     }
 
-    fn poll_write_vectored(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        bufs: &[io::IoSlice],
-    ) -> Poll<Result<usize, io::Error>> {
-        dbg!("write");
-        AsyncWrite::poll_write_vectored(self, cx, bufs)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<(), io::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+        AsyncWrite::poll_flush(self, cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
         AsyncWrite::poll_close(self, cx)
-    }
-
-    fn is_write_vectored(&self) -> bool {
-        true
     }
 }

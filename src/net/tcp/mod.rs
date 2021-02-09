@@ -1,46 +1,39 @@
 mod accept;
 mod connect;
-mod event;
 mod read;
 mod write;
 
-use std::task::Waker;
+use std::sync::Arc;
 
 use winapi::um::{
-    threadpoolapiset::CloseThreadpoolWait,
-    winnt::PTP_WAIT,
-    winsock2::{closesocket, WSACloseEvent, SOCKET, WSAEVENT},
+    winnt::HANDLE,
+    winsock2::{closesocket, SOCKET},
 };
 
-use crate::sync::Mutex;
+use crate::overlapped::io::{Handle, IO};
 
 pub struct TcpStream {
-    inner: Box<TcpStreamInner>,
+    inner: Arc<IO<TcpSocket>>,
 }
 
-struct TcpStreamInner {
-    socket: SOCKET,
-    cleanup: usize,
-    event: WSAEVENT,
-    wait: PTP_WAIT,
-    read_waker: Mutex<Option<Waker>>,
-    write_waker: Mutex<Option<Waker>>,
+struct TcpSocket(SOCKET);
+
+impl TcpStream {
+    pub const DEFAULT_CAPACITY: usize = 1024;
 }
 
-unsafe impl Send for TcpStreamInner {}
-unsafe impl Sync for TcpStreamInner {}
+impl Handle for TcpSocket {
+    fn from_handle(handle: HANDLE) -> Self {
+        Self(handle as SOCKET)
+    }
 
-impl Drop for TcpStreamInner {
-    fn drop(&mut self) {
+    fn into_handle(self) -> HANDLE {
+        self.0 as HANDLE
+    }
+
+    fn close(self) {
         unsafe {
-            panic!();
-            if self.cleanup >= 2 {
-                // CloseThreadpoolWait(self.wait);
-            }
-            if self.cleanup >= 1 {
-                WSACloseEvent(self.event);
-            }
-            closesocket(self.socket);
+            closesocket(self.0);
         }
     }
 }

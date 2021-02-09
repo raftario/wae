@@ -12,24 +12,15 @@ async fn http() -> Result {
         .handshake::<TcpStream, Body>(target_stream)
         .await?;
 
-    wae::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("Error in connection: {}", e);
-        }
-    })
-    .detach();
+    wae::spawn(async move { connection.await.ok() }).detach();
 
-    for _ in 0..10 {
-        let request = Request::builder()
-            .header("Host", "example.com")
-            .method("GET")
-            .body(Body::from(""))?;
+    let request = Request::builder()
+        .header("Host", "example.com")
+        .method("GET")
+        .body(Body::from(""))?;
 
-        let response = request_sender.send_request(request).await?;
-        assert!(response.status() == StatusCode::OK);
-
-        std::thread::sleep(std::time::Duration::from_millis(250))
-    }
+    let response = request_sender.send_request(request).await?;
+    assert!(response.status() == StatusCode::OK);
 
     Ok(())
 }
