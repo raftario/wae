@@ -21,6 +21,7 @@ use crossbeam_queue::SegQueue;
 
 pub use crate::context::ContextGuard;
 
+#[derive(Debug)]
 pub struct Threadpool {
     handle: Handle,
 }
@@ -69,7 +70,7 @@ struct TaskQueue {
 }
 
 impl Threadpool {
-    pub fn new() -> io::Result<Self> {
+    pub fn new() -> io::Result<Threadpool> {
         Builder::default().build()
     }
 
@@ -96,11 +97,6 @@ impl Handle {
         let mut ce = self.inner.callback_environ;
         ce.CallbackPriority = self.priority as u32;
         ce
-    }
-
-    #[cfg(any(feature = "tracing"))]
-    pub(crate) fn pool(&self) -> winapi::um::winnt::PTP_POOL {
-        self.inner.callback_environ.Pool
     }
 
     pub fn set_max_threads(&self, maximum: u32) -> &Self {
@@ -132,7 +128,7 @@ impl Handle {
 }
 
 impl Builder {
-    pub fn new() -> Self {
+    pub fn new() -> Builder {
         let mut system_info = SYSTEM_INFO::default();
         unsafe { GetSystemInfo(&mut system_info) };
 
@@ -144,18 +140,18 @@ impl Builder {
         }
     }
 
-    pub fn min_threads(mut self, max: u32) -> Self {
+    pub fn min_threads(mut self, max: u32) -> Builder {
         self.max_threads = max;
         self
     }
 
-    pub fn max_threads(mut self, min: u32) -> Self {
+    pub fn max_threads(mut self, min: u32) -> Builder {
         self.min_threads = min;
         self
     }
 
     #[cfg(feature = "net")]
-    pub fn net(mut self, enabled: bool) -> Self {
+    pub fn net(mut self, enabled: bool) -> Builder {
         self.net = enabled;
         self
     }
@@ -283,16 +279,11 @@ impl Deref for Threadpool {
     }
 }
 
-impl fmt::Debug for Threadpool {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Threadpool").field(&self.handle).finish()
-    }
-}
-
 impl fmt::Debug for Handle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Handle")
-            .field(&self.inner.callback_environ.Pool)
+        f.debug_struct("Handle")
+            .field("pool", &self.inner.callback_environ.Pool)
+            .field("priority", &self.priority)
             .finish()
     }
 }

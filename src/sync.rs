@@ -1,6 +1,7 @@
 #[cfg(all(feature = "parking_lot", any(feature = "net")))]
 pub(crate) use parking_lot::Mutex;
 #[cfg(all(not(feature = "parking_lot"), any(feature = "net")))]
+#[derive(Debug)]
 pub(crate) struct Mutex<T>(std::sync::Mutex<T>);
 #[cfg(all(not(feature = "parking_lot"), any(feature = "net")))]
 impl<T> Mutex<T> {

@@ -118,14 +118,14 @@ impl TcpListener {
             return Err(io::Error::last_os_error());
         }
 
-        let client = TcpSocket::new()?;
+        let next = TcpSocket::new()?;
 
         Ok(TcpListener {
             acceptex,
             gaesa,
             socket,
             event,
-            client,
+            next,
             buffer: Vec::with_capacity(Self::ADDR_SPACE * 2),
         })
     }
@@ -161,14 +161,14 @@ impl TcpListener {
     ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
         let socket = *self.socket;
         let acceptex = self.acceptex;
-        let client = *self.client;
+        let next = *self.next;
         let buffer = self.buffer.as_mut_ptr();
 
         let poll = self.event.poll(cx, Some(socket as HANDLE), |overlapped| {
             let ret = unsafe {
                 acceptex(
                     socket,
-                    client,
+                    next,
                     buffer as *mut c_void,
                     0,
                     Self::ADDR_SPACE as u32,
@@ -195,8 +195,8 @@ impl TcpListener {
                 let read_capacity = read_capacity.into().unwrap_or(TcpStream::DEFAULT_CAPACITY);
                 let write_capacity = write_capacity.into().unwrap_or(TcpStream::DEFAULT_CAPACITY);
 
-                let mut client = TcpSocket::new()?;
-                mem::swap(&mut client, &mut self.client);
+                let mut next = TcpSocket::new()?;
+                mem::swap(&mut next, &mut self.next);
 
                 let mut addr = ptr::null_mut();
                 let mut addr_len = 0;
@@ -216,7 +216,7 @@ impl TcpListener {
 
                 let inner = unsafe {
                     IO::new(
-                        client,
+                        next,
                         read_capacity,
                         write_capacity,
                         &handle.callback_environ(),

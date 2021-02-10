@@ -20,11 +20,11 @@ impl Drop for ContextGuard<'_> {
 }
 
 impl Handle {
-    pub fn current() -> Self {
+    pub fn current() -> Handle {
         Self::try_current().expect("no wae context")
     }
 
-    pub fn try_current() -> Option<Self> {
+    pub fn try_current() -> Option<Handle> {
         HANDLE.with(|h| {
             let h = h.borrow();
             h.clone()
@@ -46,4 +46,8 @@ impl Handle {
     pub(crate) fn enter_span(&self) -> Option<tracing::span::Entered> {
         self.span.as_ref().map(|span| span.enter())
     }
+}
+
+pub fn current() -> Handle {
+    Handle::current()
 }

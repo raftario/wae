@@ -27,7 +27,7 @@ use crate::{sync::Mutex, util::HeapAllocated};
 
 pub(crate) struct IO<T: Handle> {
     handle: HANDLE,
-    tpio: PTP_IO,
+    tp_io: PTP_IO,
     read_half: UnsafeCell<IOHalf>,
     write_half: UnsafeCell<IOHalf>,
     _marker: PhantomData<T>,
@@ -97,7 +97,7 @@ impl<T: Handle> IO<T> {
         let write_half = UnsafeCell::new(IOHalf::new(write_capacity));
         let overlapped = H::new(Self {
             handle,
-            tpio: ptr::null_mut(),
+            tp_io: ptr::null_mut(),
             read_half,
             write_half,
             _marker: PhantomData::default(),
@@ -113,7 +113,7 @@ impl<T: Handle> IO<T> {
         if tpio.is_null() {
             return Err(io::Error::last_os_error());
         }
-        (*(ptr as *mut Self)).tpio = tpio;
+        (*(ptr as *mut Self)).tp_io = tpio;
 
         Ok(overlapped)
     }
@@ -134,7 +134,7 @@ impl<T: Handle> IO<T> {
             half.buffer.len = usize::min(half.capacity, len) as u32;
             half.set_waker(cx.waker().clone());
 
-            StartThreadpoolIo(self.tpio);
+            StartThreadpoolIo(self.tp_io);
             match schedule(
                 &*ManuallyDrop::new(T::from_handle(self.handle)),
                 &mut half.buffer,
@@ -193,7 +193,7 @@ impl<T: Handle> IO<T> {
             half.buffer.len = write as u32;
             half.set_waker(cx.waker().clone());
 
-            StartThreadpoolIo(self.tpio);
+            StartThreadpoolIo(self.tp_io);
             match schedule(
                 &*ManuallyDrop::new(T::from_handle(self.handle)),
                 &mut half.buffer,
@@ -246,6 +246,14 @@ impl<T: Handle> IO<T> {
         ManuallyDrop::new(T::from_handle(self.handle))
     }
 
+    pub(crate) fn read_capacity(&self) -> (usize, bool) {
+        self.read_half().capacity()
+    }
+
+    pub(crate) fn write_capacity(&self) -> (usize, bool) {
+        self.write_half().capacity()
+    }
+
     fn read_half(&self) -> &IOHalf {
         unsafe { &*self.read_half.get() }
     }
@@ -288,7 +296,11 @@ impl IOHalf {
         }
     }
 
-    pub fn set_capacity(&mut self, capacity: usize) -> bool {
+    fn capacity(&self) -> (usize, bool) {
+        (self.capacity, self.fixed)
+    }
+
+    fn set_capacity(&mut self, capacity: usize) -> bool {
         if self.state.is_busy() {
             return false;
         }
@@ -333,9 +345,9 @@ unsafe impl<T: Handle> Sync for IO<T> {}
 
 impl<T: Handle> Drop for IO<T> {
     fn drop(&mut self) {
-        if !self.tpio.is_null() {
+        if !self.tp_io.is_null() {
             unsafe {
-                CloseThreadpoolIo(self.tpio);
+                CloseThreadpoolIo(self.tp_io);
             }
         }
         mem::drop(T::from_handle(self.handle));
@@ -353,6 +365,7 @@ impl Drop for IOHalf {
         }
     }
 }
+
 pub(crate) trait Handle {
     fn from_handle(handle: HANDLE) -> Self;
     fn as_handle(&self) -> HANDLE;

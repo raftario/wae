@@ -1,4 +1,4 @@
-use std::{io, mem, net::SocketAddr, ops::Deref, ptr};
+use std::{fmt, io, mem, net::SocketAddr, ops::Deref, ptr};
 
 use winapi::{
     shared::{
@@ -22,7 +22,7 @@ use crate::overlapped::io::Handle;
 pub(crate) struct TcpSocket(SOCKET);
 
 impl TcpSocket {
-    pub(crate) fn new() -> io::Result<Self> {
+    pub(crate) fn new() -> io::Result<TcpSocket> {
         let socket = unsafe {
             WSASocketW(
                 AF_UNSPEC,
@@ -104,5 +104,11 @@ impl Drop for TcpSocket {
         unsafe {
             closesocket(self.0);
         }
+    }
+}
+
+impl fmt::Debug for TcpSocket {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
     }
 }

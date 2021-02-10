@@ -1,5 +1,6 @@
 use std::{
     ffi::c_void,
+    fmt,
     future::Future,
     mem::{self, ManuallyDrop},
     pin::Pin,
@@ -44,6 +45,14 @@ impl<T> Drop for JoinHandle<T> {
     }
 }
 
+impl<T> fmt::Debug for JoinHandle<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("JoinHandle")
+            .field("task", &*self.task)
+            .finish()
+    }
+}
+
 pub(crate) unsafe extern "system" fn callback(
     instance: PTP_CALLBACK_INSTANCE,
     context: *mut c_void,
@@ -77,9 +86,9 @@ impl Handle {
                 Some(parent) => Some(tracing::trace_span!(
                     parent: parent,
                     "task",
-                    pool = ?handle.pool()
+                    handle = ?handle
                 )),
-                None => Some(tracing::trace_span!("task", pool = ?handle.pool())),
+                None => Some(tracing::trace_span!("task", handle = ?handle)),
             }
         }
 
