@@ -89,11 +89,11 @@ impl WsaEvent {
     pub(crate) fn poll<S>(
         &mut self,
         cx: &mut Context,
-        socket: SOCKET,
+        socket: Option<SOCKET>,
         schedule: S,
     ) -> Poll<io::Result<()>>
     where
-        S: FnOnce(SOCKET, *mut OVERLAPPED) -> Poll<io::Result<()>>,
+        S: FnOnce(Option<SOCKET>, *mut OVERLAPPED) -> Poll<io::Result<()>>,
     {
         match self.state.status() {
             Status::Idle => match schedule(socket, self.overlapped()) {
@@ -108,9 +108,9 @@ impl WsaEvent {
                 self.set_waker(cx.waker().clone());
                 Poll::Pending
             }
-            Status::Ready => match self.error.get() {
-                Some(err) => Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32))),
-                None => {
+            Status::Ready => match (self.error.get(), socket) {
+                (Some(err), _) => Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32))),
+                (None, Some(socket)) => {
                     if unsafe {
                         WSAGetOverlappedResult(socket, self.overlapped(), &mut 0, TRUE, &mut 0)
                     } == TRUE
@@ -120,6 +120,7 @@ impl WsaEvent {
                         Poll::Ready(Err(io::Error::last_os_error()))
                     }
                 }
+                (None, None) => Poll::Ready(Ok(())),
             },
             _ => unreachable!(),
         }

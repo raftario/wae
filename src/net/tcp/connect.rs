@@ -185,7 +185,7 @@ impl Future for Connect<'_> {
         let len = self.len;
 
         unsafe {
-            self.event.poll(cx, socket, |socket, overlapped| {
+            self.event.poll(cx, Some(socket), |_, overlapped| {
                 let ret = connectex(
                     socket,
                     addr,

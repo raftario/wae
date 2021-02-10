@@ -14,7 +14,7 @@ use winapi::{
 
 use socket2::SockAddr;
 
-use crate::overlapped::event::Event;
+use crate::overlapped::wsa_event::WsaEvent;
 
 pub(crate) fn get_addr_info(host: &str, port: Option<u16>) -> GetAddrInfoFuture {
     let (host, port) = match port {
@@ -35,7 +35,7 @@ pub(crate) fn get_addr_info(host: &str, port: Option<u16>) -> GetAddrInfoFuture 
             ..Default::default()
         },
     });
-    let event = Event::new();
+    let event = WsaEvent::new();
 
     GetAddrInfoFuture {
         host,
@@ -53,7 +53,7 @@ pub struct GetAddrInfoFuture {
     host: Vec<u16>,
     port: Option<Vec<u16>>,
     inner: Box<GetAddrInfoFutureInner>,
-    event: io::Result<Box<Event>>,
+    event: io::Result<Box<WsaEvent>>,
 }
 
 unsafe impl Send for GetAddrInfoFuture {}
