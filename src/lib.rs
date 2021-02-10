@@ -1,6 +1,5 @@
 #![cfg(windows)]
 
-pub mod error;
 #[cfg(feature = "net")]
 pub mod net;
 #[cfg(any(feature = "net"))]

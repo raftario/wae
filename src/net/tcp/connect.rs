@@ -105,7 +105,7 @@ impl TcpStream {
             }
         };
 
-        let event: Box<Event> = Event::new(&handle.callback_environ)?;
+        let event: Box<Event> = Event::new(&handle.callback_environ())?;
 
         let addrs = addr.to_socket_addrs().await?;
 
@@ -139,7 +139,7 @@ impl TcpStream {
                         socket,
                         read_capacity,
                         write_capacity,
-                        &handle.callback_environ,
+                        &handle.callback_environ(),
                     )
                 }?;
                 Ok(TcpStream { inner })

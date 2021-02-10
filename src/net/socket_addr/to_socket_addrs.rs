@@ -43,7 +43,7 @@ impl ToSocketAddrs for str {
         match self.parse() {
             Ok(addr) => sealed::ToSocketAddrs::Immediate { addr },
             Err(_) => sealed::ToSocketAddrs::Future {
-                future: get_addr_info(self, None, &Handle::current().callback_environ),
+                future: get_addr_info(self, None, &Handle::current().callback_environ()),
             },
         }
     }
@@ -62,7 +62,7 @@ impl ToSocketAddrs for (&str, u16) {
                 addr: SocketAddr::new(ip, self.1),
             },
             Err(_) => sealed::ToSocketAddrs::Future {
-                future: get_addr_info(self.0, Some(self.1), &Handle::current().callback_environ),
+                future: get_addr_info(self.0, Some(self.1), &Handle::current().callback_environ()),
             },
         }
     }
@@ -75,7 +75,7 @@ impl ToSocketAddrs for (String, u16) {
                 addr: SocketAddr::new(ip, self.1),
             },
             Err(_) => sealed::ToSocketAddrs::Future {
-                future: get_addr_info(&self.0, Some(self.1), &Handle::current().callback_environ),
+                future: get_addr_info(&self.0, Some(self.1), &Handle::current().callback_environ()),
             },
         }
     }

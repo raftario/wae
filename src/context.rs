@@ -1,6 +1,6 @@
 use std::{cell::RefCell, marker::PhantomData};
 
-use crate::{error::Error, threadpool::Handle};
+use crate::threadpool::Handle;
 
 thread_local! {
     static HANDLE: RefCell<Option<Handle>> = RefCell::new(None);
@@ -13,10 +13,7 @@ pub struct ContextGuard<'a> {
 impl Drop for ContextGuard<'_> {
     fn drop(&mut self) {
         HANDLE.with(|h| {
-            let mut h = h
-                .try_borrow_mut()
-                .map_err(|_| Error::Unexpected("data race leaving context"))
-                .unwrap();
+            let mut h = h.borrow_mut();
             *h = self.previous.take();
         })
     }
@@ -24,30 +21,24 @@ impl Drop for ContextGuard<'_> {
 
 impl Handle {
     pub fn current() -> Self {
-        Self::try_current().unwrap()
+        Self::try_current().expect("no wae context")
     }
 
-    pub fn try_current() -> Result<Self, Error> {
+    pub fn try_current() -> Option<Self> {
         HANDLE.with(|h| {
-            let h = h
-                .try_borrow()
-                .map_err(|_| Error::Unexpected("data race entering context"))?;
-            h.clone().ok_or(Error::NoContext)
+            let h = h.borrow();
+            h.clone()
         })
     }
 
     pub fn enter(&self) -> ContextGuard {
-        self.try_enter().unwrap()
-    }
-
-    pub fn try_enter(&self) -> Result<ContextGuard, Error> {
         HANDLE.with(|h| {
-            let mut h = h.try_borrow_mut().map_err(|_| Error::RecursiveContext)?;
+            let mut h = h.borrow_mut();
             let previous = h.replace(self.clone());
-            Ok(ContextGuard {
+            ContextGuard {
                 previous,
                 _marker: PhantomData::default(),
-            })
+            }
         })
     }
 

@@ -84,7 +84,7 @@ impl TcpListener {
             }
         };
 
-        let event = Event::new(&handle.callback_environ)?;
+        let event = Event::new(&handle.callback_environ())?;
 
         let addrs = addr.to_socket_addrs().await?;
 
@@ -219,7 +219,7 @@ impl TcpListener {
                         client,
                         read_capacity,
                         write_capacity,
-                        &handle.callback_environ,
+                        &handle.callback_environ(),
                     )
                 }?;
                 Poll::Ready(Ok((TcpStream { inner }, sock_addr.as_std().unwrap())))

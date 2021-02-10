@@ -1,42 +1,72 @@
-use std::{cmp::Ordering, fmt, io, mem, ptr};
+use std::{cmp::Ordering, ffi::c_void, fmt, io, mem, ops::Deref, ptr, sync::Arc};
 
 use winapi::{
-    shared::minwindef::FALSE,
+    shared::minwindef::{FALSE, TRUE},
     um::{
         sysinfoapi::{GetSystemInfo, SYSTEM_INFO},
         threadpoolapiset::{
             CloseThreadpool, CloseThreadpoolCleanupGroup, CloseThreadpoolCleanupGroupMembers,
-            CreateThreadpool, CreateThreadpoolCleanupGroup, SetThreadpoolThreadMaximum,
-            SetThreadpoolThreadMinimum,
+            CreateThreadpool, CreateThreadpoolCleanupGroup, CreateThreadpoolWork,
+            SetThreadpoolThreadMaximum, SetThreadpoolThreadMinimum, SubmitThreadpoolWork,
         },
         winnt::{
-            TP_CALLBACK_ENVIRON_V3_u, PTP_CALLBACK_INSTANCE, TP_CALLBACK_ENVIRON_V3,
-            TP_CALLBACK_PRIORITY_HIGH, TP_CALLBACK_PRIORITY_LOW, TP_CALLBACK_PRIORITY_NORMAL,
+            TP_CALLBACK_ENVIRON_V3_u, PTP_CALLBACK_INSTANCE, PTP_POOL, PTP_WORK,
+            TP_CALLBACK_ENVIRON_V3, TP_CALLBACK_PRIORITY_HIGH, TP_CALLBACK_PRIORITY_LOW,
+            TP_CALLBACK_PRIORITY_NORMAL,
         },
     },
 };
 
-use crate::sync::Once;
+use async_task::Runnable;
+use crossbeam_queue::SegQueue;
 
 pub use crate::context::ContextGuard;
 
 pub struct Threadpool {
     handle: Handle,
-    close: Once,
 }
 
-impl Drop for Threadpool {
-    fn drop(&mut self) {
-        self.close(true)
-    }
+#[derive(Clone)]
+pub struct Handle {
+    inner: Arc<HandleInner>,
+    priority: Priority,
+    pub(crate) callback_instance: Option<PTP_CALLBACK_INSTANCE>,
+    #[cfg(feature = "tracing")]
+    pub(crate) span: Option<tracing::Span>,
 }
 
-impl fmt::Debug for Threadpool {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Threadpool")
-            .field(&self.handle.callback_environ.Pool)
-            .finish()
-    }
+unsafe impl Send for Handle {}
+unsafe impl Sync for Handle {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Builder {
+    max_threads: u32,
+    min_threads: u32,
+    #[cfg(feature = "net")]
+    net: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum Priority {
+    High = TP_CALLBACK_PRIORITY_HIGH,
+    Normal = TP_CALLBACK_PRIORITY_NORMAL,
+    Low = TP_CALLBACK_PRIORITY_LOW,
+}
+
+struct HandleInner {
+    high_queue: TaskQueue,
+    normal_queue: TaskQueue,
+    low_queue: TaskQueue,
+    callback_environ: TP_CALLBACK_ENVIRON_V3,
+}
+
+unsafe impl Send for HandleInner {}
+unsafe impl Sync for HandleInner {}
+
+struct TaskQueue {
+    queue: SegQueue<(Runnable, Handle)>,
+    work: PTP_WORK,
 }
 
 impl Threadpool {
@@ -47,114 +77,79 @@ impl Threadpool {
     pub fn builder() -> Builder {
         Builder::default()
     }
-
-    pub fn handle(&self) -> &Handle {
-        &self.handle
-    }
-
-    pub fn close(&self, wait: bool) {
-        self.close.call_once(|| unsafe {
-            CloseThreadpoolCleanupGroupMembers(
-                self.handle.callback_environ.CleanupGroup,
-                (!wait).into(),
-                ptr::null_mut(),
-            );
-            CloseThreadpoolCleanupGroup(self.handle.callback_environ.CleanupGroup);
-            CloseThreadpool(self.handle.callback_environ.Pool);
-        })
-    }
-
-    pub fn set_thread_maximum(&self, maximum: u32) -> &Self {
-        self.handle.set_thread_maximum(maximum);
-        self
-    }
-
-    pub fn set_thread_minimum(&self, minimum: u32) -> &Self {
-        self.handle.set_thread_minimum(minimum);
-        self
-    }
-}
-
-#[derive(Clone)]
-pub struct Handle {
-    pub(crate) callback_environ: TP_CALLBACK_ENVIRON_V3,
-    pub(crate) callback_instance: Option<PTP_CALLBACK_INSTANCE>,
-    #[cfg(feature = "tracing")]
-    pub(crate) span: Option<tracing::Span>,
-}
-
-unsafe impl Send for Handle {}
-unsafe impl Sync for Handle {}
-
-impl fmt::Debug for Handle {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Handle")
-            .field(&self.callback_environ.Pool)
-            .finish()
-    }
 }
 
 impl Handle {
-    pub(crate) fn set_callback_instance(&mut self, instance: PTP_CALLBACK_INSTANCE) {
-        self.callback_instance = Some(instance);
+    pub(crate) fn push_task(&self, runnable: Runnable) {
+        let queue = match self.priority {
+            Priority::High => &self.inner.high_queue,
+            Priority::Normal => &self.inner.normal_queue,
+            Priority::Low => &self.inner.low_queue,
+        };
+        queue.queue.push((runnable, self.clone()));
+        unsafe {
+            SubmitThreadpoolWork(queue.work);
+        }
     }
 
-    pub fn set_thread_maximum(&self, maximum: u32) -> &Self {
-        unsafe { SetThreadpoolThreadMaximum(self.callback_environ.Pool, maximum) }
+    pub(crate) fn callback_environ(&self) -> TP_CALLBACK_ENVIRON_V3 {
+        let mut ce = self.inner.callback_environ;
+        ce.CallbackPriority = self.priority as u32;
+        ce
+    }
+
+    pub(crate) fn pool(&self) -> PTP_POOL {
+        self.inner.callback_environ.Pool
+    }
+
+    pub fn set_max_threads(&self, maximum: u32) -> &Self {
+        unsafe { SetThreadpoolThreadMaximum(self.inner.callback_environ.Pool, maximum) }
         self
     }
 
-    pub fn set_thread_minimum(&self, minimum: u32) -> &Self {
-        self.try_set_thread_minimum(minimum).unwrap()
+    pub fn set_min_threads(&self, minimum: u32) -> &Self {
+        self.try_set_min_threads(minimum).unwrap()
     }
 
-    pub fn try_set_thread_minimum(&self, minimum: u32) -> io::Result<&Self> {
-        if unsafe { SetThreadpoolThreadMinimum(self.callback_environ.Pool, minimum) } == FALSE {
-            return Err(io::Error::last_os_error());
+    pub fn try_set_min_threads(&self, minimum: u32) -> io::Result<&Self> {
+        if unsafe { SetThreadpoolThreadMinimum(self.inner.callback_environ.Pool, minimum) } == TRUE
+        {
+            Ok(self)
+        } else {
+            Err(io::Error::last_os_error())
         }
-        Ok(self)
+    }
+
+    pub fn priority(&self) -> Priority {
+        self.priority
     }
 
     pub fn set_priority(&mut self, priority: Priority) -> &mut Self {
-        self.callback_environ.CallbackPriority = priority as u32;
+        self.priority = priority;
         self
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Builder {
-    #[cfg(feature = "net")]
-    net: bool,
-    thread_maximum: u32,
-    thread_minimum: u32,
-}
-
-impl Default for Builder {
-    fn default() -> Self {
-        let mut system_info = SYSTEM_INFO::default();
-        unsafe { GetSystemInfo(&mut system_info) };
-
-        Self {
-            #[cfg(feature = "net")]
-            net: true,
-            thread_maximum: 512,
-            thread_minimum: system_info.dwNumberOfProcessors,
-        }
     }
 }
 
 impl Builder {
     pub fn new() -> Self {
-        Self::default()
+        let mut system_info = SYSTEM_INFO::default();
+        unsafe { GetSystemInfo(&mut system_info) };
+
+        Self {
+            max_threads: 512,
+            min_threads: system_info.dwNumberOfProcessors,
+            #[cfg(feature = "net")]
+            net: true,
+        }
     }
 
-    pub fn thread_maximum(mut self, max: u32) -> Self {
-        self.thread_maximum = max;
+    pub fn min_threads(mut self, max: u32) -> Self {
+        self.max_threads = max;
         self
     }
 
-    pub fn thread_minimum(mut self, min: u32) -> Self {
-        self.thread_minimum = min;
+    pub fn max_threads(mut self, min: u32) -> Self {
+        self.min_threads = min;
         self
     }
 
@@ -170,8 +165,8 @@ impl Builder {
             return Err(io::Error::last_os_error());
         }
 
-        unsafe { SetThreadpoolThreadMaximum(pool, self.thread_maximum) };
-        if unsafe { SetThreadpoolThreadMinimum(pool, self.thread_minimum) } == FALSE {
+        unsafe { SetThreadpoolThreadMaximum(pool, self.max_threads) };
+        if unsafe { SetThreadpoolThreadMinimum(pool, self.min_threads) } == FALSE {
             unsafe { CloseThreadpool(pool) };
             return Err(io::Error::last_os_error());
         }
@@ -182,7 +177,7 @@ impl Builder {
             return Err(io::Error::last_os_error());
         }
 
-        let callback_environ = TP_CALLBACK_ENVIRON_V3 {
+        let mut callback_environ = TP_CALLBACK_ENVIRON_V3 {
             Version: 3,
             Pool: pool,
             CleanupGroup: cleanup_group,
@@ -191,9 +186,42 @@ impl Builder {
             ActivationContext: ptr::null_mut(),
             FinalizationCallback: None,
             u: TP_CALLBACK_ENVIRON_V3_u::default(),
-            CallbackPriority: Priority::Normal as u32,
+            CallbackPriority: Priority::default() as u32,
             Size: mem::size_of::<TP_CALLBACK_ENVIRON_V3>() as u32,
         };
+
+        let mut inner = Arc::new(HandleInner {
+            high_queue: TaskQueue {
+                queue: SegQueue::new(),
+                work: ptr::null_mut(),
+            },
+            normal_queue: TaskQueue {
+                queue: SegQueue::new(),
+                work: ptr::null_mut(),
+            },
+            low_queue: TaskQueue {
+                queue: SegQueue::new(),
+                work: ptr::null_mut(),
+            },
+            callback_environ,
+        });
+        let inner_mut = Arc::get_mut(&mut inner).unwrap();
+
+        inner_mut.high_queue.work = Self::create_work(
+            Priority::High,
+            &inner_mut.high_queue.queue,
+            &mut callback_environ,
+        )?;
+        inner_mut.normal_queue.work = Self::create_work(
+            Priority::Normal,
+            &inner_mut.normal_queue.queue,
+            &mut callback_environ,
+        )?;
+        inner_mut.low_queue.work = Self::create_work(
+            Priority::Low,
+            &inner_mut.low_queue.queue,
+            &mut callback_environ,
+        )?;
 
         #[cfg(feature = "net")]
         if self.net {
@@ -207,22 +235,91 @@ impl Builder {
 
         Ok(Threadpool {
             handle: Handle {
-                callback_environ,
+                inner,
+                priority: Priority::Normal,
                 callback_instance: None,
                 #[cfg(feature = "tracing")]
                 span: None,
             },
-            close: Once::new(),
         })
+    }
+
+    fn create_work(
+        priority: Priority,
+        queue: &SegQueue<(Runnable, Handle)>,
+        callback_environ: &mut TP_CALLBACK_ENVIRON_V3,
+    ) -> io::Result<PTP_WORK> {
+        callback_environ.CallbackPriority = priority as u32;
+        let work = unsafe {
+            CreateThreadpoolWork(
+                Some(crate::task::callback),
+                queue as *const _ as *mut c_void,
+                callback_environ,
+            )
+        };
+        if !work.is_null() {
+            Ok(work)
+        } else {
+            unsafe {
+                CloseThreadpoolCleanupGroupMembers(
+                    callback_environ.CleanupGroup,
+                    TRUE,
+                    ptr::null_mut(),
+                );
+                CloseThreadpoolCleanupGroup(callback_environ.CleanupGroup);
+                CloseThreadpool(callback_environ.Pool);
+            }
+            Err(io::Error::last_os_error())
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u32)]
-pub enum Priority {
-    High = TP_CALLBACK_PRIORITY_HIGH,
-    Normal = TP_CALLBACK_PRIORITY_NORMAL,
-    Low = TP_CALLBACK_PRIORITY_LOW,
+impl Deref for Threadpool {
+    type Target = Handle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
+impl fmt::Debug for Threadpool {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Threadpool").field(&self.handle).finish()
+    }
+}
+
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_tuple("Handle")
+            .field(&self.inner.callback_environ.Pool)
+            .finish()
+    }
+}
+
+impl Drop for HandleInner {
+    fn drop(&mut self) {
+        unsafe {
+            CloseThreadpoolCleanupGroupMembers(
+                self.callback_environ.CleanupGroup,
+                TRUE,
+                ptr::null_mut(),
+            );
+            CloseThreadpoolCleanupGroup(self.callback_environ.CleanupGroup);
+            CloseThreadpool(self.callback_environ.Pool);
+        }
+    }
+}
+
+impl Default for Builder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Default for Priority {
+    fn default() -> Self {
+        Self::Normal
+    }
 }
 
 macro_rules! priority_ord {

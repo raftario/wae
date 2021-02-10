@@ -94,7 +94,6 @@ fn entry(args: EntryArgs, input: ItemFn, test: bool) -> Result<TokenStream, Erro
                 .build()
                 .unwrap()
                 .block_on(async #block)
-                .unwrap()
         }
     };
     Ok(TokenStream::from(output))

@@ -15,7 +15,8 @@ include = [".github/"]
 members = ["macros"]
 
 [dependencies]
-async-task-ffi = "4.1.1"
+async-task = "4"
+crossbeam-queue = "0.3"
 pin-utils = "0.1"
 pin-project-lite = "0.2"
 [dependencies.wae-macros]
@@ -27,7 +28,6 @@ features = [
     "std",
     "threadpoolapiset",
     "synchapi",
-    "errhandlingapi",
     "sysinfoapi",
     "winnt",
     "winbase",

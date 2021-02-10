@@ -1,71 +1,64 @@
 use std::{
     ffi::c_void,
     future::Future,
-    mem::MaybeUninit,
-    panic::{self, AssertUnwindSafe},
+    mem::{self, ManuallyDrop},
     pin::Pin,
     task::{Context, Poll},
 };
 
-use async_task_ffi::Runnable;
-use pin_project_lite::pin_project;
+use async_task::{Runnable, Task};
+use crossbeam_queue::SegQueue;
+use pin_utils::pin_mut;
 
-use winapi::um::{
-    threadpoolapiset::{CloseThreadpoolWork, CreateThreadpoolWork, SubmitThreadpoolWork},
-    winnt::{PTP_CALLBACK_INSTANCE, PTP_WORK},
-};
+use winapi::um::winnt::{PTP_CALLBACK_INSTANCE, PTP_WORK};
 
-use crate::{
-    error::Error,
-    threadpool::{Handle, Threadpool},
-};
+use crate::threadpool::Handle;
 
-pin_project! {
-    #[must_use = "tasks get canceled when dropped, use `.detach()` to run them in the background"]
-    pub struct JoinHandle<T> {
-        #[pin]
-        task: async_task_ffi::Task<T>,
-    }
+pub struct JoinHandle<T> {
+    task: ManuallyDrop<Task<T>>,
 }
 
 impl<T> Future for JoinHandle<T> {
     type Output = T;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.project().task.poll(cx)
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let task = &mut *self.task;
+        pin_mut!(task);
+        task.poll(cx)
     }
 }
 
 impl<T> JoinHandle<T> {
-    pub fn detach(self) {
-        self.task.detach()
-    }
-
     pub async fn cancel(self) -> Option<T> {
-        self.task.cancel().await
+        let mut this = self;
+        let output = unsafe { ManuallyDrop::take(&mut this.task) }.cancel().await;
+        mem::forget(this);
+        output
     }
 }
 
-struct CallbackContext {
-    handle: Handle,
+impl<T> Drop for JoinHandle<T> {
+    fn drop(&mut self) {
+        let task = unsafe { ManuallyDrop::take(&mut self.task) };
+        task.detach()
+    }
 }
 
-unsafe extern "system" fn callback(
+pub(crate) unsafe extern "system" fn callback(
     instance: PTP_CALLBACK_INSTANCE,
     context: *mut c_void,
-    work: PTP_WORK,
+    _work: PTP_WORK,
 ) {
-    let runnable: Runnable<MaybeUninit<CallbackContext>> = Runnable::from_raw(context as *mut ());
-    let CallbackContext { mut handle } = runnable.data().as_ptr().read();
+    let context = context as *const SegQueue<(Runnable, Handle)>;
+    let queue = &*context;
+    let (runnable, mut handle) = queue.pop().unwrap();
 
-    handle.set_callback_instance(instance);
+    handle.callback_instance.replace(instance);
     let _context = handle.enter();
     #[cfg(feature = "tracing")]
     let _span = handle.enter_span();
 
-    panic::catch_unwind(AssertUnwindSafe(move || runnable.run())).ok();
-
-    CloseThreadpoolWork(work);
+    std::panic::catch_unwind(move || runnable.run()).ok();
 }
 
 impl Handle {
@@ -80,52 +73,24 @@ impl Handle {
         let mut handle = self.clone();
         #[cfg(feature = "tracing")]
         {
-            handle.span = match handle.span {
+            handle.span = match &handle.span {
                 Some(parent) => Some(tracing::trace_span!(
                     parent: parent,
                     "task",
-                    pool = ?handle.callback_environ.Pool
+                    pool = ?handle.pool()
                 )),
-                None => Some(tracing::trace_span!("task", pool = ?handle.callback_environ.Pool)),
+                None => Some(tracing::trace_span!("task", pool = ?handle.pool())),
             }
         }
 
-        let schedule = move |mut runnable: Runnable<MaybeUninit<CallbackContext>>| {
-            let handle = handle.clone();
-            let mut callback_environ = handle.callback_environ;
+        let schedule = move |runnable| handle.push_task(runnable);
 
-            unsafe {
-                let context = CallbackContext { handle };
-                runnable.data_mut().as_mut_ptr().write(context);
-                let runnable = runnable.into_raw();
-
-                let work = CreateThreadpoolWork(
-                    Some(callback),
-                    runnable as *mut c_void,
-                    &mut callback_environ,
-                );
-                if work.is_null() {
-                    panic!("failed to schedule task: {}", Error::win32());
-                }
-
-                SubmitThreadpoolWork(work);
-            }
-        };
-
-        let (runnable, task) = async_task_ffi::spawn_with(future, schedule, MaybeUninit::uninit());
+        let (runnable, task) = async_task::spawn(future, schedule);
         runnable.schedule();
 
-        JoinHandle { task }
-    }
-}
-
-impl Threadpool {
-    pub fn spawn<F, T>(&self, future: F) -> JoinHandle<T>
-    where
-        F: Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-    {
-        self.handle().spawn(future)
+        JoinHandle {
+            task: ManuallyDrop::new(task),
+        }
     }
 }
 
