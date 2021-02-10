@@ -10,9 +10,8 @@ use winapi::{
             SetThreadpoolThreadMaximum, SetThreadpoolThreadMinimum, SubmitThreadpoolWork,
         },
         winnt::{
-            TP_CALLBACK_ENVIRON_V3_u, PTP_CALLBACK_INSTANCE, PTP_POOL, PTP_WORK,
-            TP_CALLBACK_ENVIRON_V3, TP_CALLBACK_PRIORITY_HIGH, TP_CALLBACK_PRIORITY_LOW,
-            TP_CALLBACK_PRIORITY_NORMAL,
+            TP_CALLBACK_ENVIRON_V3_u, PTP_CALLBACK_INSTANCE, PTP_WORK, TP_CALLBACK_ENVIRON_V3,
+            TP_CALLBACK_PRIORITY_HIGH, TP_CALLBACK_PRIORITY_LOW, TP_CALLBACK_PRIORITY_NORMAL,
         },
     },
 };
@@ -92,13 +91,15 @@ impl Handle {
         }
     }
 
+    #[cfg(any(feature = "net"))]
     pub(crate) fn callback_environ(&self) -> TP_CALLBACK_ENVIRON_V3 {
         let mut ce = self.inner.callback_environ;
         ce.CallbackPriority = self.priority as u32;
         ce
     }
 
-    pub(crate) fn pool(&self) -> PTP_POOL {
+    #[cfg(any(feature = "tracing"))]
+    pub(crate) fn pool(&self) -> winapi::um::winnt::PTP_POOL {
         self.inner.callback_environ.Pool
     }
 
