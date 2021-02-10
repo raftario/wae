@@ -1,0 +1,40 @@
+name: Docs
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    docs:
+        name: Docs
+        runs-on: windows-latest
+
+        steps:
+            - uses: actions/checkout@v2
+            - uses: actions-rs/toolchain@v1
+              with:
+                  toolchain: nightly
+                  profile: minimal
+                  override: true
+                  components: rust-docs
+
+            - uses: actions/cache@v2
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      target
+                  key: docs-${{ hashFiles('**/Cargo.toml') }}
+
+            - name: Generate docs
+              uses: actions-rs/cargo@v1
+              with:
+                  command: doc
+                  args: --all-features
+
+            - name: Deploy
+              uses: peaceiris/actions-gh-pages@v3
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./target/doc
+                  publish_branch: docs

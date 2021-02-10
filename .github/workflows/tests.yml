@@ -24,7 +24,7 @@ jobs:
                       ~/.cargo/registry
                       ~/.cargo/git
                       target
-                  key: tests-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+                  key: tests-${{ matrix.target }}-${{ hashFiles('**/Cargo.toml') }}
 
             - name: Run test suite
               uses: actions-rs/cargo@v1
@@ -51,14 +51,14 @@ jobs:
                       ~/.cargo/registry
                       ~/.cargo/git
                       target
-                  key: checks-${{ hashFiles('**/Cargo.lock') }}
+                  key: checks-${{ hashFiles('**/Cargo.toml') }}
 
-            - name: Check for clippy warnings
+            - name: Check for clippy warnings (default features)
               uses: actions-rs/clippy-check@v1
               with:
                   token: ${{ secrets.GITHUB_TOKEN }}
                   args: -- -D warnings
-            - name: Check for clippy warnings (all)
+            - name: Check for clippy warnings (all features)
               uses: actions-rs/clippy-check@v1
               with:
                   token: ${{ secrets.GITHUB_TOKEN }}
