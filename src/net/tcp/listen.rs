@@ -136,10 +136,10 @@ impl TcpListener {
     }
 
     #[inline]
-    pub async fn accept_with_capacity<C: Into<Option<usize>>>(
+    pub async fn accept_with_capacity(
         &mut self,
-        read_capacity: C,
-        write_capacity: C,
+        read_capacity: impl Into<Option<usize>>,
+        write_capacity: impl Into<Option<usize>>,
     ) -> io::Result<(TcpStream, SocketAddr)> {
         Incoming {
             listener: self,
@@ -153,11 +153,11 @@ impl TcpListener {
         self.poll_accept_with_capacity(cx, None, None)
     }
 
-    pub fn poll_accept_with_capacity<C: Into<Option<usize>>>(
+    pub fn poll_accept_with_capacity(
         &mut self,
         cx: &mut Context,
-        read_capacity: C,
-        write_capacity: C,
+        read_capacity: impl Into<Option<usize>>,
+        write_capacity: impl Into<Option<usize>>,
     ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
         let socket = *self.socket;
         let acceptex = self.acceptex;
@@ -233,10 +233,10 @@ impl TcpListener {
         self.incoming_with_capacity(None, None)
     }
 
-    pub fn incoming_with_capacity<C: Into<Option<usize>>>(
+    pub fn incoming_with_capacity(
         &mut self,
-        read_capacity: C,
-        write_capacity: C,
+        read_capacity: impl Into<Option<usize>>,
+        write_capacity: impl Into<Option<usize>>,
     ) -> Incoming {
         Incoming {
             listener: self,

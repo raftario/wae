@@ -73,6 +73,7 @@ net = [
     "socket2",
 ]
 macros = ["wae-macros"]
+docs = ["net", "macros", "tokio"]
 
 [dev-dependencies]
 futures = "0.3.12"
@@ -82,12 +83,8 @@ path = "macros"
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
 targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
-features = ["macros", "net", "tokio"]
+features = ["docs"]
 
-[[test]]
-name = "channels"
-path = "tests/channels.rs"
-required-features = ["macros"]
 [[test]]
 name = "tcp"
 path = "tests/tcp.rs"
