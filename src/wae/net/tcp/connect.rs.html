@@ -242,10 +242,10 @@
         <span class="ident">TcpStream</span>::<span class="ident">connect_with_capacity</span>(<span class="ident">addr</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>).<span class="kw">await</span>
     }
 
-    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">connect_with_capacity</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">ToSocketAddrs</span>, <span class="ident">C</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span>(
+    <span class="kw">pub</span> <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">connect_with_capacity</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">ToSocketAddrs</span><span class="op">&gt;</span>(
         <span class="ident">addr</span>: <span class="ident">A</span>,
-        <span class="ident">read_capacity</span>: <span class="ident">C</span>,
-        <span class="ident">write_capacity</span>: <span class="ident">C</span>,
+        <span class="ident">read_capacity</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+        <span class="ident">write_capacity</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">TcpStream</span><span class="op">&gt;</span> {
         <span class="kw">let</span> <span class="ident">handle</span> <span class="op">=</span> <span class="ident">Handle</span>::<span class="ident">current</span>();
 
@@ -308,7 +308,7 @@
             }
         };
 
-        <span class="kw">let</span> <span class="ident">event</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Event</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">handle</span>.<span class="ident">callback_environ</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">event</span>: <span class="ident">Box</span><span class="op">&lt;</span><span class="ident">Event</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Event</span>::<span class="ident">new</span>(<span class="kw-2">&amp;</span><span class="ident">handle</span>.<span class="ident">callback_environ</span>())<span class="question-mark">?</span>;
 
         <span class="kw">let</span> <span class="ident">addrs</span> <span class="op">=</span> <span class="ident">addr</span>.<span class="ident">to_socket_addrs</span>().<span class="kw">await</span><span class="question-mark">?</span>;
 
@@ -342,7 +342,7 @@
                         <span class="ident">socket</span>,
                         <span class="ident">read_capacity</span>,
                         <span class="ident">write_capacity</span>,
-                        <span class="kw-2">&amp;</span><span class="ident">handle</span>.<span class="ident">callback_environ</span>,
+                        <span class="kw-2">&amp;</span><span class="ident">handle</span>.<span class="ident">callback_environ</span>(),
                     )
                 }<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>(<span class="ident">TcpStream</span> { <span class="ident">inner</span> })
