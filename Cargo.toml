@@ -34,6 +34,9 @@ features = [
     "minwindef",
     "impl-default",
 ]
+[dependencies.futures-core]
+version = "0.3.12"
+optional = true
 [dependencies.futures-io]
 version = "0.3.12"
 optional = true
@@ -65,6 +68,7 @@ net = [
     "winapi/ioapiset",
     "winapi/minwinbase",
     "winapi/winnt",
+    "futures-core",
     "futures-io",
     "socket2",
 ]
@@ -72,7 +76,6 @@ macros = ["wae-macros"]
 
 [dev-dependencies]
 futures = "0.3.12"
-hyper = { version = "0.14.2", features = ["client", "server", "http1"] }
 [dev-dependencies.wae-macros]
 path = "macros"
 
@@ -89,7 +92,3 @@ required-features = ["macros"]
 name = "tcp"
 path = "tests/tcp.rs"
 required-features = ["net", "macros"]
-[[test]]
-name = "http"
-path = "tests/http.rs"
-required-features = ["net", "macros", "tokio"]

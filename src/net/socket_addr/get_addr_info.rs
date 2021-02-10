@@ -9,14 +9,21 @@ use std::{
 
 use winapi::{
     shared::ws2def::{ADDRINFOEXW, AF_UNSPEC, NS_ALL},
-    um::ws2tcpip::{FreeAddrInfoExW, GetAddrInfoExW},
+    um::{
+        winnt::TP_CALLBACK_ENVIRON_V3,
+        ws2tcpip::{FreeAddrInfoExW, GetAddrInfoExW},
+    },
 };
 
 use socket2::SockAddr;
 
-use crate::overlapped::wsa_event::WsaEvent;
+use crate::overlapped::event::Event;
 
-pub(crate) fn get_addr_info(host: &str, port: Option<u16>) -> GetAddrInfoFuture {
+pub(crate) fn get_addr_info(
+    host: &str,
+    port: Option<u16>,
+    callback_environ: &TP_CALLBACK_ENVIRON_V3,
+) -> GetAddrInfoFuture {
     let (host, port) = match port {
         Some(p) => (host, Some(to_wstr(&p.to_string()))),
         None => {
@@ -35,7 +42,7 @@ pub(crate) fn get_addr_info(host: &str, port: Option<u16>) -> GetAddrInfoFuture 
             ..Default::default()
         },
     });
-    let event = WsaEvent::new();
+    let event = Event::new(callback_environ);
 
     GetAddrInfoFuture {
         host,
@@ -53,7 +60,7 @@ pub struct GetAddrInfoFuture {
     host: Vec<u16>,
     port: Option<Vec<u16>>,
     inner: Box<GetAddrInfoFutureInner>,
-    event: io::Result<Box<WsaEvent>>,
+    event: io::Result<Box<Event>>,
 }
 
 unsafe impl Send for GetAddrInfoFuture {}
@@ -79,7 +86,7 @@ impl Future for GetAddrInfoFuture {
 
         match self.event.as_mut() {
             Ok(event) => {
-                let poll = event.poll(cx, None, |_, overlapped| {
+                let poll = event.poll(cx, None, |overlapped| {
                     let ret = unsafe {
                         GetAddrInfoExW(
                             host,

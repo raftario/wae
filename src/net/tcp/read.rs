@@ -15,10 +15,10 @@ use winapi::{
 
 use futures_io::AsyncRead;
 
-use super::{TcpSocket, TcpStream};
+use super::{socket::TcpSocket, TcpStream};
 
 fn schedule(
-    socket: TcpSocket,
+    socket: &TcpSocket,
     buf: *mut WSABUF,
     overlapped: *mut OVERLAPPED,
 ) -> Poll<io::Result<usize>> {
@@ -26,7 +26,7 @@ fn schedule(
 
     let ret = unsafe {
         WSARecv(
-            socket.0,
+            **socket,
             buf,
             1,
             ptr::null_mut(),
@@ -37,7 +37,7 @@ fn schedule(
     };
     if ret == 0 {
         let mut recvd = 0;
-        if unsafe { WSAGetOverlappedResult(socket.0, overlapped, &mut recvd, TRUE, &mut flags) }
+        if unsafe { WSAGetOverlappedResult(**socket, overlapped, &mut recvd, TRUE, &mut flags) }
             == TRUE
         {
             return Poll::Ready(Ok(recvd as usize));

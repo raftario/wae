@@ -14,18 +14,18 @@ use winapi::{
     },
 };
 
-use super::{TcpSocket, TcpStream};
+use super::{socket::TcpSocket, TcpStream};
 
 fn schedule(
-    socket: TcpSocket,
+    socket: &TcpSocket,
     buf: *mut WSABUF,
     overlapped: *mut OVERLAPPED,
 ) -> Poll<io::Result<usize>> {
-    let ret = unsafe { WSASend(socket.0, buf, 1, ptr::null_mut(), 0, overlapped, None) };
+    let ret = unsafe { WSASend(**socket, buf, 1, ptr::null_mut(), 0, overlapped, None) };
     if ret == 0 {
         let mut sent = 0;
         let mut flags = 0;
-        if unsafe { WSAGetOverlappedResult(socket.0, overlapped, &mut sent, TRUE, &mut flags) }
+        if unsafe { WSAGetOverlappedResult(**socket, overlapped, &mut sent, TRUE, &mut flags) }
             == TRUE
         {
             return Poll::Ready(Ok(sent as usize));
@@ -52,7 +52,7 @@ impl AsyncWrite for TcpStream {
     }
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
-        match unsafe { shutdown(self.inner.handle().0, SD_SEND) } {
+        match unsafe { shutdown(**self.inner.handle(), SD_SEND) } {
             0 => Poll::Ready(Ok(())),
             _ => Poll::Ready(Err(io::Error::last_os_error())),
         }

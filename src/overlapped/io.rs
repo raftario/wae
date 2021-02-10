@@ -4,7 +4,9 @@ use std::{
     ffi::c_void,
     io,
     marker::PhantomData,
+    mem::{self, ManuallyDrop},
     num::NonZeroU32,
+    ops::Deref,
     ptr, slice,
     task::{Context, Poll, Waker},
     thread,
@@ -20,7 +22,7 @@ use winapi::{
     },
 };
 
-use super::state::{State, Status};
+use super::state::State;
 use crate::{sync::Mutex, util::HeapAllocated};
 
 pub(crate) struct IO<T: Handle> {
@@ -58,16 +60,18 @@ unsafe extern "system" fn callback(
     match context.operation(overlapped) {
         Operation::Read => {
             let half = context.read_half();
-            half.set_error(result);
-            half.state.set_ready_with(bytes_transferred);
-            half.wake();
+            if half.state.is_busy() {
+                half.set_error(result);
+                half.state.set_ready_with(bytes_transferred);
+                half.wake();
+            }
         }
         Operation::Write => {
             let half = context.write_half();
-            if let Status::Canceled = half.state.status() {
+            if half.state.is_canceled() {
                 half.state.set_idle();
                 half.wake();
-            } else {
+            } else if half.state.is_busy() {
                 half.set_error(result);
                 half.state.set_ready_with(bytes_transferred);
                 half.wake();
@@ -82,12 +86,13 @@ impl<T: Handle> IO<T> {
         handle: T,
         read_capacity: usize,
         write_capacity: usize,
-        mut callback_environ: TP_CALLBACK_ENVIRON_V3,
+        callback_environ: &TP_CALLBACK_ENVIRON_V3,
     ) -> io::Result<H>
     where
         H: HeapAllocated<Self>,
     {
-        let handle = handle.into_handle();
+        let handle = ManuallyDrop::new(handle);
+        let handle = handle.as_handle();
         let read_half = UnsafeCell::new(IOHalf::new(read_capacity));
         let write_half = UnsafeCell::new(IOHalf::new(write_capacity));
         let overlapped = H::new(Self {
@@ -103,7 +108,7 @@ impl<T: Handle> IO<T> {
             handle,
             Some(callback),
             ptr as *mut c_void,
-            &mut callback_environ,
+            callback_environ as *const TP_CALLBACK_ENVIRON_V3 as *mut TP_CALLBACK_ENVIRON_V3,
         );
         if tpio.is_null() {
             return Err(io::Error::last_os_error());
@@ -121,51 +126,52 @@ impl<T: Handle> IO<T> {
         schedule: S,
     ) -> Poll<io::Result<usize>>
     where
-        S: FnOnce(T, *mut WSABUF, *mut OVERLAPPED) -> Poll<io::Result<usize>>,
+        S: FnOnce(&T, *mut WSABUF, *mut OVERLAPPED) -> Poll<io::Result<usize>>,
     {
         let half = &mut *self.read_half.get();
-        match half.state.state() {
-            (Status::Idle, _) => {
-                half.fit(len);
-                half.buffer.len = usize::min(half.capacity, len) as u32;
-                half.set_waker(cx.waker().clone());
+        if half.state.enter_idle() {
+            half.fit(len);
+            half.buffer.len = usize::min(half.capacity, len) as u32;
+            half.set_waker(cx.waker().clone());
 
-                StartThreadpoolIo(self.tpio);
-                match schedule(
-                    T::from_handle(self.handle),
-                    &mut half.buffer,
-                    &mut half.overlapped,
-                ) {
-                    Poll::Pending => {
-                        half.state.set_busy();
-                        Poll::Pending
-                    }
-                    Poll::Ready(ret) => Poll::Ready(ret),
-                }
-            }
-            (Status::Busy, _) | (Status::Canceled, _) => {
-                half.set_waker(cx.waker().clone());
-                Poll::Pending
-            }
-            (Status::Ready, n) => {
-                if let Some(err) = half.error.get_mut().take() {
+            StartThreadpoolIo(self.tpio);
+            match schedule(
+                &*ManuallyDrop::new(T::from_handle(self.handle)),
+                &mut half.buffer,
+                &mut half.overlapped,
+            ) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(Ok(n)) => {
+                    ptr::copy_nonoverlapping(half.buffer.buf as *mut u8, ptr, n);
                     half.state.set_idle();
-                    return Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32)));
+                    Poll::Ready(Ok(n))
                 }
-
-                let read = usize::min(n, len);
-                ptr::copy_nonoverlapping(half.buffer.buf as *mut u8, ptr, read);
-
-                if read < n {
-                    let rem = n - read;
-                    ptr::copy(half.buffer.buf.add(read), half.buffer.buf, rem);
-                    half.state.set_ready_with(rem);
-                } else {
+                Poll::Ready(Err(err)) => {
                     half.state.set_idle();
+                    Poll::Ready(Err(err))
                 }
-
-                Poll::Ready(Ok(read))
             }
+        } else if let Some(n) = half.state.enter_ready() {
+            if let Some(err) = half.error.get_mut().take() {
+                half.state.set_idle();
+                return Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32)));
+            }
+
+            let read = usize::min(n, len);
+            ptr::copy_nonoverlapping(half.buffer.buf as *mut u8, ptr, read);
+
+            if read < n {
+                let rem = n - read;
+                ptr::copy(half.buffer.buf.add(read), half.buffer.buf, rem);
+                half.state.set_ready_with(rem);
+            } else {
+                half.state.set_idle();
+            }
+
+            Poll::Ready(Ok(read))
+        } else {
+            half.set_waker(cx.waker().clone());
+            Poll::Pending
         }
     }
 
@@ -177,72 +183,67 @@ impl<T: Handle> IO<T> {
         schedule: S,
     ) -> Poll<io::Result<usize>>
     where
-        S: FnOnce(T, *mut WSABUF, *mut OVERLAPPED) -> Poll<io::Result<usize>>,
+        S: FnOnce(&T, *mut WSABUF, *mut OVERLAPPED) -> Poll<io::Result<usize>>,
     {
         let half = &mut *self.write_half.get();
-        match half.state.state() {
-            (Status::Idle, _) => {
-                half.fit(len);
-                let write = usize::min(half.capacity, len);
-                ptr::copy_nonoverlapping(ptr as *const i8, half.buffer.buf, write);
-                half.buffer.len = write as u32;
-                half.set_waker(cx.waker().clone());
+        if half.state.enter_idle() {
+            half.fit(len);
+            let write = usize::min(half.capacity, len);
+            ptr::copy_nonoverlapping(ptr as *const i8, half.buffer.buf, write);
+            half.buffer.len = write as u32;
+            half.set_waker(cx.waker().clone());
 
-                StartThreadpoolIo(self.tpio);
-                match schedule(
-                    T::from_handle(self.handle),
-                    &mut half.buffer,
-                    &mut half.overlapped,
-                ) {
-                    Poll::Pending => {
-                        half.state.set_busy();
-                        Poll::Pending
-                    }
-                    Poll::Ready(ret) => Poll::Ready(ret),
+            StartThreadpoolIo(self.tpio);
+            match schedule(
+                &*ManuallyDrop::new(T::from_handle(self.handle)),
+                &mut half.buffer,
+                &mut half.overlapped,
+            ) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(ret) => {
+                    half.state.set_idle();
+                    Poll::Ready(ret)
                 }
             }
-            (Status::Busy, _) => {
-                half.set_waker(cx.waker().clone());
+        } else if let Some(n) = half.state.enter_ready() {
+            half.state.set_idle();
 
-                let prev_len = half.buffer.len as usize;
-                if len < prev_len
-                    || slice::from_raw_parts(ptr, prev_len)
-                        != slice::from_raw_parts(half.buffer.buf as *const u8, prev_len)
-                {
-                    if CancelIoEx(self.handle, &mut half.overlapped) == TRUE {
-                        half.state.set_canceled();
-                    } else {
-                        return Poll::Ready(Err(io::Error::last_os_error()));
-                    }
-                }
-
-                Poll::Pending
+            if let Some(err) = half.error.get_mut().take() {
+                return Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32)));
             }
-            (Status::Canceled, _) => {
-                half.set_waker(cx.waker().clone());
-                Poll::Pending
+
+            if len < n
+                || slice::from_raw_parts(ptr, n)
+                    != slice::from_raw_parts(half.buffer.buf as *const u8, n)
+            {
+                return self.poll_write(cx, ptr, len, schedule);
             }
-            (Status::Ready, n) => {
-                half.state.set_idle();
 
-                if let Some(err) = half.error.get_mut().take() {
-                    return Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32)));
+            Poll::Ready(Ok(n))
+        } else if half.state.is_canceled() {
+            half.set_waker(cx.waker().clone());
+            Poll::Pending
+        } else {
+            half.set_waker(cx.waker().clone());
+
+            let prev_len = half.buffer.len as usize;
+            if len < prev_len
+                || slice::from_raw_parts(ptr, prev_len)
+                    != slice::from_raw_parts(half.buffer.buf as *const u8, prev_len)
+            {
+                if CancelIoEx(self.handle, &mut half.overlapped) == TRUE {
+                    half.state.set_canceled();
+                } else {
+                    return Poll::Ready(Err(io::Error::last_os_error()));
                 }
-
-                if len < n
-                    || slice::from_raw_parts(ptr, n)
-                        != slice::from_raw_parts(half.buffer.buf as *const u8, n)
-                {
-                    return self.poll_write(cx, ptr, len, schedule);
-                }
-
-                Poll::Ready(Ok(n))
             }
+
+            Poll::Pending
         }
     }
 
-    pub(crate) fn handle(&self) -> T {
-        T::from_handle(self.handle)
+    pub(crate) fn handle(&self) -> impl Deref<Target = T> {
+        ManuallyDrop::new(T::from_handle(self.handle))
     }
 
     fn read_half(&self) -> &IOHalf {
@@ -266,10 +267,6 @@ impl<T: Handle> IO<T> {
 }
 
 impl IOHalf {
-    fn set_waker(&self, waker: Waker) {
-        self.waker.lock().replace(waker);
-    }
-
     fn new(capacity: usize) -> Self {
         let buf_layout = Layout::array::<u8>(capacity).unwrap();
         let buf = unsafe { alloc::alloc(buf_layout) };
@@ -291,7 +288,7 @@ impl IOHalf {
         }
     }
 
-    fn set_capacity(&mut self, capacity: usize) -> bool {
+    pub fn set_capacity(&mut self, capacity: usize) -> bool {
         if self.state.is_busy() {
             return false;
         }
@@ -316,6 +313,10 @@ impl IOHalf {
         }
     }
 
+    fn set_waker(&self, waker: Waker) {
+        self.waker.lock().replace(waker);
+    }
+
     fn set_error(&self, error: u32) {
         self.error.set(NonZeroU32::new(error))
     }
@@ -337,7 +338,7 @@ impl<T: Handle> Drop for IO<T> {
                 CloseThreadpoolIo(self.tpio);
             }
         }
-        T::from_handle(self.handle).close();
+        mem::drop(T::from_handle(self.handle));
     }
 }
 
@@ -354,16 +355,13 @@ impl Drop for IOHalf {
 }
 pub(crate) trait Handle {
     fn from_handle(handle: HANDLE) -> Self;
-    fn into_handle(self) -> HANDLE;
-    fn close(self);
+    fn as_handle(&self) -> HANDLE;
 }
 
 impl Handle for () {
     fn from_handle(_: HANDLE) -> Self {}
 
-    fn into_handle(self) -> HANDLE {
+    fn as_handle(&self) -> HANDLE {
         ptr::null_mut()
     }
-
-    fn close(self) {}
 }

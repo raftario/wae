@@ -15,12 +15,12 @@ use winapi::{
         minwinbase::OVERLAPPED,
         synchapi::{CreateEventW, ResetEvent},
         threadpoolapiset::{CloseThreadpoolWait, CreateThreadpoolWait, SetThreadpoolWait},
-        winnt::{HANDLE, PTP_CALLBACK_INSTANCE, PTP_WAIT, TP_WAIT_RESULT},
+        winnt::{HANDLE, PTP_CALLBACK_INSTANCE, PTP_WAIT, TP_CALLBACK_ENVIRON_V3, TP_WAIT_RESULT},
     },
 };
 
-use super::state::{State, Status};
-use crate::{sync::Mutex, threadpool::Handle, util::HeapAllocated};
+use super::state::State;
+use crate::{sync::Mutex, util::HeapAllocated};
 
 pub(crate) struct Event {
     overlapped: OVERLAPPED,
@@ -38,16 +38,16 @@ unsafe extern "system" fn callback(
 ) {
     let context = context as *const Event;
     let event = &*context;
-    event.set_error(result);
-    event.state.set_ready();
-    if let Some(waker) = &*event.waker.lock() {
-        waker.wake_by_ref();
+    if event.state.is_busy() {
+        event.set_error(result);
+        event.state.set_ready();
+        event.wake();
     }
 }
 
 impl Event {
     #[allow(clippy::new_ret_no_self)]
-    pub(crate) fn new<H>() -> io::Result<H>
+    pub(crate) fn new<H>(callback_environ: &TP_CALLBACK_ENVIRON_V3) -> io::Result<H>
     where
         H: HeapAllocated<Self>,
     {
@@ -70,7 +70,7 @@ impl Event {
             CreateThreadpoolWait(
                 Some(callback),
                 hevent.inner_ptr() as *mut c_void,
-                &mut Handle::current().callback_environ,
+                callback_environ as *const TP_CALLBACK_ENVIRON_V3 as *mut TP_CALLBACK_ENVIRON_V3,
             )
         };
         if wait.is_null() {
@@ -86,28 +86,26 @@ impl Event {
     }
 
     pub(crate) fn poll<S>(
-        &mut self,
+        &self,
         cx: &mut Context,
         handle: Option<HANDLE>,
         schedule: S,
     ) -> Poll<io::Result<()>>
     where
-        S: FnOnce(Option<HANDLE>, *mut OVERLAPPED) -> Poll<io::Result<()>>,
+        S: FnOnce(*mut OVERLAPPED) -> Poll<io::Result<()>>,
     {
-        match self.state.status() {
-            Status::Idle => match schedule(handle, self.overlapped()) {
-                Poll::Pending => {
-                    self.set_waker(cx.waker().clone());
-                    self.state.set_busy();
-                    Poll::Pending
+        if self.state.enter_idle() {
+            self.set_waker(cx.waker().clone());
+            match schedule(self.overlapped()) {
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(ret) => {
+                    self.reset()?;
+                    Poll::Ready(ret)
                 }
-                Poll::Ready(ret) => Poll::Ready(ret),
-            },
-            Status::Busy => {
-                self.set_waker(cx.waker().clone());
-                Poll::Pending
             }
-            Status::Ready => match (self.error.get(), handle) {
+        } else if self.state.enter_ready().is_some() {
+            self.reset()?;
+            match (self.error.get(), handle) {
                 (Some(err), _) => Poll::Ready(Err(io::Error::from_raw_os_error(err.get() as i32))),
                 (None, Some(handle)) => {
                     if unsafe { GetOverlappedResult(handle, self.overlapped(), &mut 0, TRUE) } != 0
@@ -118,21 +116,22 @@ impl Event {
                     }
                 }
                 (None, None) => Poll::Ready(Ok(())),
-            },
-            _ => unreachable!(),
+            }
+        } else {
+            self.set_waker(cx.waker().clone());
+            Poll::Pending
         }
     }
 
-    pub(crate) fn _reset(&mut self) -> io::Result<bool> {
-        if self.state.is_ready() {
-            if unsafe { ResetEvent(self.overlapped.hEvent) } != 0 {
-                self.state.set_idle();
-                Ok(true)
-            } else {
-                Err(io::Error::last_os_error())
+    fn reset(&self) -> io::Result<()> {
+        self.state.set_idle();
+        if unsafe { ResetEvent(self.overlapped.hEvent) } != 0 {
+            unsafe {
+                SetThreadpoolWait(self.wait, self.overlapped.hEvent, ptr::null_mut());
             }
+            Ok(())
         } else {
-            Ok(false)
+            Err(io::Error::last_os_error())
         }
     }
 
@@ -146,6 +145,12 @@ impl Event {
 
     fn overlapped(&self) -> *mut OVERLAPPED {
         &self.overlapped as *const OVERLAPPED as *mut OVERLAPPED
+    }
+
+    fn wake(&self) {
+        if let Some(waker) = &*self.waker.lock() {
+            waker.wake_by_ref();
+        }
     }
 }
 

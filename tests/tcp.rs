@@ -1,25 +1,41 @@
-use wae::net::TcpStream;
+use std::net::SocketAddr;
+
+use futures::{AsyncReadExt, AsyncWriteExt, StreamExt, TryStreamExt};
+use wae::net::{TcpListener, TcpStream};
 
 type Result = std::io::Result<()>;
 
-#[ignore = "requires network"]
 #[wae::test]
-async fn connect_v4() -> Result {
-    TcpStream::connect(("93.184.216.34", 80)).await?;
+async fn roundtrip() -> Result {
+    let listener = TcpListener::bind(("localhost", 0)).await?;
+    let addr = listener.local_addr()?;
+    let listener = wae::spawn(server(listener));
+    for _ in 0..4 {
+        wae::spawn(client(addr)).detach();
+    }
+    listener.await
+}
+
+async fn server(mut listener: TcpListener) -> Result {
+    listener
+        .incoming()
+        .take(4)
+        .try_for_each_concurrent(4, |(stream, _)| wae::spawn(handle(stream)))
+        .await
+}
+
+async fn client(addr: SocketAddr) -> Result {
+    let mut stream = TcpStream::connect(addr).await?;
+    stream.write_all(b"Hello").await?;
+    let mut buf = [0; 5];
+    stream.read_exact(&mut buf).await?;
+    assert_eq!(&buf, b"World");
     Ok(())
 }
 
-#[ignore = "requires network"]
-#[wae::test]
-async fn connect_v6() -> Result {
-    TcpStream::connect(("2606:2800:220:1:248:1893:25c8:1946", 80)).await?;
-    Ok(())
-}
-
-#[ignore = "requires network"]
-#[wae::test]
-async fn resolve() -> Result {
-    TcpStream::connect(("example.com", 80)).await?;
-    TcpStream::connect("example.com:80").await?;
-    Ok(())
+async fn handle(mut stream: TcpStream) -> Result {
+    let mut buf = [0; 5];
+    stream.read_exact(&mut buf).await?;
+    assert_eq!(&buf, b"Hello");
+    stream.write_all(b"World").await
 }

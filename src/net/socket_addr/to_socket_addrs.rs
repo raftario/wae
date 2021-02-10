@@ -1,5 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
+use crate::threadpool::Handle;
+
 use super::get_addr_info::get_addr_info;
 
 pub trait ToSocketAddrs {
@@ -41,7 +43,7 @@ impl ToSocketAddrs for str {
         match self.parse() {
             Ok(addr) => sealed::ToSocketAddrs::Immediate { addr },
             Err(_) => sealed::ToSocketAddrs::Future {
-                future: get_addr_info(self, None),
+                future: get_addr_info(self, None, &Handle::current().callback_environ),
             },
         }
     }
@@ -60,7 +62,7 @@ impl ToSocketAddrs for (&str, u16) {
                 addr: SocketAddr::new(ip, self.1),
             },
             Err(_) => sealed::ToSocketAddrs::Future {
-                future: get_addr_info(self.0, Some(self.1)),
+                future: get_addr_info(self.0, Some(self.1), &Handle::current().callback_environ),
             },
         }
     }
@@ -73,7 +75,7 @@ impl ToSocketAddrs for (String, u16) {
                 addr: SocketAddr::new(ip, self.1),
             },
             Err(_) => sealed::ToSocketAddrs::Future {
-                future: get_addr_info(&self.0, Some(self.1)),
+                future: get_addr_info(&self.0, Some(self.1), &Handle::current().callback_environ),
             },
         }
     }

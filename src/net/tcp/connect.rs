@@ -11,29 +11,29 @@ use winapi::{
     shared::{
         guiddef::GUID,
         minwindef::TRUE,
-        ws2def::{AF_INET, IPPROTO_TCP, SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_IN},
+        ws2def::{AF_INET, SIO_GET_EXTENSION_FUNCTION_POINTER, SOCKADDR, SOCKADDR_IN},
         ws2ipdef::SOCKADDR_IN6,
     },
     um::{
         mswsock::{LPFN_CONNECTEX, WSAID_CONNECTEX},
-        winsock2::{
-            bind, WSAGetLastError, WSAIoctl, WSASocketW, INVALID_SOCKET, SOCKET, SOCK_STREAM,
-            WSA_FLAG_OVERLAPPED,
-        },
+        winnt::HANDLE,
+        winsock2::{bind, WSAGetLastError, WSAIoctl, SOCKET},
     },
 };
 
 use socket2::SockAddr;
 
-use super::{TcpSocket, TcpStream};
+use super::{socket::TcpSocket, TcpStream};
 use crate::{
     net::ToSocketAddrs,
-    overlapped::{io::IO, wsa_event::WsaEvent},
+    overlapped::{event::Event, io::IO},
     threadpool::Handle,
     util::Extract,
 };
 
 impl TcpStream {
+    pub const DEFAULT_CAPACITY: usize = 1024;
+
     #[inline]
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
         TcpStream::connect_with_capacity(addr, None, None).await
@@ -46,22 +46,10 @@ impl TcpStream {
     ) -> io::Result<TcpStream> {
         let handle = Handle::current();
 
-        let read_capacity = read_capacity.into().unwrap_or(TcpStream::DEFAULT_CAPACITY);
-        let write_capacity = write_capacity.into().unwrap_or(TcpStream::DEFAULT_CAPACITY);
+        let read_capacity = read_capacity.into().unwrap_or(Self::DEFAULT_CAPACITY);
+        let write_capacity = write_capacity.into().unwrap_or(Self::DEFAULT_CAPACITY);
 
-        let socket = unsafe {
-            WSASocketW(
-                AF_INET,
-                SOCK_STREAM,
-                IPPROTO_TCP as i32,
-                ptr::null_mut(),
-                0,
-                WSA_FLAG_OVERLAPPED,
-            )
-        };
-        if socket == INVALID_SOCKET {
-            return Err(io::Error::last_os_error());
-        }
+        let socket = TcpSocket::new()?;
 
         let bind_sockaddr = SOCKADDR_IN6 {
             sin6_family: AF_INET as u16,
@@ -71,7 +59,7 @@ impl TcpStream {
         };
         if unsafe {
             bind(
-                socket,
+                *socket,
                 &bind_sockaddr as *const SOCKADDR_IN6 as *const SOCKADDR,
                 mem::size_of::<SOCKADDR_IN6>() as i32,
             )
@@ -85,7 +73,7 @@ impl TcpStream {
             };
             if unsafe {
                 bind(
-                    socket,
+                    *socket,
                     &bind_sockaddr as *const SOCKADDR_IN as *const SOCKADDR,
                     mem::size_of::<SOCKADDR_IN>() as i32,
                 )
@@ -101,7 +89,7 @@ impl TcpStream {
             let mut returned = 0;
 
             let ret = WSAIoctl(
-                socket,
+                *socket,
                 SIO_GET_EXTENSION_FUNCTION_POINTER,
                 &WSAID_CONNECTEX as *const GUID as *mut c_void,
                 mem::size_of::<GUID>() as u32,
@@ -117,52 +105,50 @@ impl TcpStream {
             }
         };
 
-        let mut event: Box<WsaEvent> = WsaEvent::new()?;
+        let event: Box<Event> = Event::new(&handle.callback_environ)?;
 
         let addrs = addr.to_socket_addrs().await?;
 
-        let mut connected = false;
+        let mut result = Err(io::Error::from_raw_os_error(0));
         let mut tried = 0;
+
         for addr in addrs {
             let sock_addr = SockAddr::from(addr);
             let addr = unsafe { sock_addr.as_ptr().read() };
             let len = sock_addr.len();
 
-            let connect = Connect {
+            result = Connect {
                 connectex,
-                socket,
-                event: &mut event,
+                socket: *socket,
+                event: &event,
                 addr: &addr,
                 len,
             }
             .await;
 
             tried += 1;
-            if connect.is_ok() {
-                connected = true;
+            if result.is_ok() {
                 break;
             }
-
-            event.reset()?;
         }
 
-        if connected {
-            let inner = unsafe {
-                IO::new(
-                    TcpSocket(socket),
-                    read_capacity,
-                    write_capacity,
-                    handle.callback_environ,
-                )
-            }?;
-            Ok(TcpStream { inner })
-        } else if tried > 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            Err(io::Error::new(
+        match result {
+            Ok(()) => {
+                let inner = unsafe {
+                    IO::new(
+                        socket,
+                        read_capacity,
+                        write_capacity,
+                        &handle.callback_environ,
+                    )
+                }?;
+                Ok(TcpStream { inner })
+            }
+            Err(err) if tried > 0 => Err(err),
+            _ => Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 "the provided address couldn't be resolved",
-            ))
+            )),
         }
     }
 }
@@ -170,7 +156,7 @@ impl TcpStream {
 struct Connect<'a> {
     connectex: <LPFN_CONNECTEX as Extract>::Inner,
     socket: SOCKET,
-    event: &'a mut WsaEvent,
+    event: &'a Event,
     addr: &'a SOCKADDR,
     len: i32,
 }
@@ -178,14 +164,14 @@ struct Connect<'a> {
 impl Future for Connect<'_> {
     type Output = io::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let socket = self.socket;
         let connectex = self.connectex;
         let addr = self.addr;
         let len = self.len;
 
         unsafe {
-            self.event.poll(cx, Some(socket), |_, overlapped| {
+            self.event.poll(cx, Some(socket as HANDLE), |overlapped| {
                 let ret = connectex(
                     socket,
                     addr,

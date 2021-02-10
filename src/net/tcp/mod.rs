@@ -1,39 +1,33 @@
-mod accept;
 mod connect;
+mod listen;
 mod read;
+mod socket;
 mod write;
 
 use std::sync::Arc;
 
-use winapi::um::{
-    winnt::HANDLE,
-    winsock2::{closesocket, SOCKET},
+use winapi::um::mswsock::{LPFN_ACCEPTEX, LPFN_GETACCEPTEXSOCKADDRS};
+
+use crate::{
+    overlapped::{event::Event, io::IO},
+    util::Extract,
 };
 
-use crate::overlapped::io::{Handle, IO};
-
 pub struct TcpStream {
-    inner: Arc<IO<TcpSocket>>,
+    inner: Arc<IO<socket::TcpSocket>>,
 }
 
-struct TcpSocket(SOCKET);
-
-impl TcpStream {
-    pub const DEFAULT_CAPACITY: usize = 1024;
+pub struct TcpListener {
+    acceptex: <LPFN_ACCEPTEX as Extract>::Inner,
+    gaesa: <LPFN_GETACCEPTEXSOCKADDRS as Extract>::Inner,
+    socket: socket::TcpSocket,
+    event: Box<Event>,
+    client: socket::TcpSocket,
+    buffer: Vec<u8>,
 }
 
-impl Handle for TcpSocket {
-    fn from_handle(handle: HANDLE) -> Self {
-        Self(handle as SOCKET)
-    }
-
-    fn into_handle(self) -> HANDLE {
-        self.0 as HANDLE
-    }
-
-    fn close(self) {
-        unsafe {
-            closesocket(self.0);
-        }
-    }
+pub struct Incoming<'a> {
+    listener: &'a mut TcpListener,
+    read_capacity: Option<usize>,
+    write_capacity: Option<usize>,
 }
