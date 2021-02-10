@@ -1,9 +1,14 @@
-use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::task::{RawWaker, RawWakerVTable, Waker};
-use winapi::um::synchapi::{WaitOnAddress, WakeByAddressAll};
-use winapi::um::winbase::INFINITE;
-use winapi::um::winnt::PVOID;
+use std::{
+    cell::UnsafeCell,
+    ffi::c_void,
+    sync::atomic::{AtomicU32, Ordering},
+    task::{RawWaker, RawWakerVTable, Waker},
+};
+
+use winapi::um::{
+    synchapi::{WaitOnAddress, WakeByAddressAll},
+    winbase::INFINITE,
+};
 
 pub struct InlineWaker {
     state: AtomicU32,
@@ -33,7 +38,7 @@ impl InlineWaker {
             .is_ok()
         {
             unsafe {
-                WakeByAddressAll(self.get_mut_ptr() as PVOID);
+                WakeByAddressAll(self.get_mut_ptr() as *mut c_void);
             }
         }
     }
@@ -43,8 +48,8 @@ impl InlineWaker {
             while self.state.load(Ordering::Acquire) != 1 {
                 let mut wait: u32 = 0;
                 WaitOnAddress(
-                    self.get_mut_ptr() as PVOID,
-                    &mut wait as *mut u32 as PVOID,
+                    self.get_mut_ptr() as *mut c_void,
+                    &mut wait as *mut u32 as *mut c_void,
                     std::mem::size_of::<u32>(),
                     INFINITE,
                 );

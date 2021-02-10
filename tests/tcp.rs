@@ -11,7 +11,7 @@ async fn roundtrip() -> Result {
     let addr = listener.local_addr()?;
     let listener = wae::spawn(server(listener));
     for _ in 0..4 {
-        wae::spawn(client(addr));
+        wae::spawn(async move { client(addr).await.unwrap() });
     }
     listener.await
 }

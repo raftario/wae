@@ -77,8 +77,6 @@ docs = ["net", "macros", "tokio"]
 
 [dev-dependencies]
 futures = "0.3.12"
-[dev-dependencies.wae-macros]
-path = "macros"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
@@ -88,4 +86,9 @@ features = ["docs"]
 [[test]]
 name = "tcp"
 path = "tests/tcp.rs"
+required-features = ["net", "macros"]
+
+[[example]]
+name = "tcp-echo"
+path = "examples/tcp_echo.rs"
 required-features = ["net", "macros"]
