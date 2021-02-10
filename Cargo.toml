@@ -16,8 +16,8 @@ members = ["macros"]
 
 [dependencies]
 async-task-ffi = "4.1.1"
-pin-utils = "0.1.0"
-pin-project-lite = "0.2.4"
+pin-utils = "0.1"
+pin-project-lite = "0.2"
 [dependencies.wae-macros]
 path = "macros"
 optional = true
@@ -35,24 +35,24 @@ features = [
     "impl-default",
 ]
 [dependencies.futures-core]
-version = "0.3.12"
+version = "0.3"
 optional = true
 [dependencies.futures-io]
-version = "0.3.12"
+version = "0.3"
 optional = true
 [dependencies.tokio]
-version = "1.1.0"
+version = "1"
 optional = true
 [dependencies.socket2]
-version = "0.3.19"
+version = "0.3"
 optional = true
 [dependencies.tracing]
-version = "0.1.22"
+version = "0.1"
 features = ["std"]
 default-features = false
 optional = true
 [dependencies.parking_lot]
-version = "0.11.1"
+version = "0.11"
 optional = true
 
 [features]
@@ -82,7 +82,7 @@ path = "macros"
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
 targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
-features = ["macros"]
+features = ["macros", "net", "tokio"]
 
 [[test]]
 name = "channels"

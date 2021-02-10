@@ -30,7 +30,7 @@ jobs:
               uses: actions-rs/cargo@v1
               with:
                   command: doc
-                  args: --all-features
+                  args: --no-deps --features macros,net,tokio
 
             - name: Deploy
               uses: peaceiris/actions-gh-pages@v3
