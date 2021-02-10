@@ -344,6 +344,7 @@
 <span id="341">341</span>
 <span id="342">342</span>
 <span id="343">343</span>
+<span id="344">344</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cmp</span>::<span class="ident">Ordering</span>, <span class="ident">ffi</span>::<span class="ident">c_void</span>, <span class="ident">fmt</span>, <span class="ident">io</span>, <span class="ident">mem</span>, <span class="ident">ops</span>::<span class="ident">Deref</span>, <span class="ident">ptr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 
@@ -357,9 +358,8 @@
             <span class="ident">SetThreadpoolThreadMaximum</span>, <span class="ident">SetThreadpoolThreadMinimum</span>, <span class="ident">SubmitThreadpoolWork</span>,
         },
         <span class="ident">winnt</span>::{
-            <span class="ident">TP_CALLBACK_ENVIRON_V3_u</span>, <span class="ident">PTP_CALLBACK_INSTANCE</span>, <span class="ident">PTP_POOL</span>, <span class="ident">PTP_WORK</span>,
-            <span class="ident">TP_CALLBACK_ENVIRON_V3</span>, <span class="ident">TP_CALLBACK_PRIORITY_HIGH</span>, <span class="ident">TP_CALLBACK_PRIORITY_LOW</span>,
-            <span class="ident">TP_CALLBACK_PRIORITY_NORMAL</span>,
+            <span class="ident">TP_CALLBACK_ENVIRON_V3_u</span>, <span class="ident">PTP_CALLBACK_INSTANCE</span>, <span class="ident">PTP_WORK</span>, <span class="ident">TP_CALLBACK_ENVIRON_V3</span>,
+            <span class="ident">TP_CALLBACK_PRIORITY_HIGH</span>, <span class="ident">TP_CALLBACK_PRIORITY_LOW</span>, <span class="ident">TP_CALLBACK_PRIORITY_NORMAL</span>,
         },
     },
 };
@@ -439,13 +439,15 @@
         }
     }
 
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;net&quot;</span>))]</span>
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">callback_environ</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">TP_CALLBACK_ENVIRON_V3</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ce</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">callback_environ</span>;
         <span class="ident">ce</span>.<span class="ident">CallbackPriority</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">priority</span> <span class="kw">as</span> <span class="ident">u32</span>;
         <span class="ident">ce</span>
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">pool</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">PTP_POOL</span> {
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>))]</span>
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">pool</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">winapi</span>::<span class="ident">um</span>::<span class="ident">winnt</span>::<span class="ident">PTP_POOL</span> {
         <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">callback_environ</span>.<span class="ident">Pool</span>
     }
 
