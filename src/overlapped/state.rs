@@ -13,17 +13,21 @@ impl State {
     }
 
     pub(crate) fn enter_idle(&self) -> bool {
-        self.0.compare_and_swap(0, Self::BUSY, Ordering::Relaxed) == 0
+        self.0.compare_and_swap(0, Self::BUSY, Ordering::Acquire) == 0
     }
 
     pub(crate) fn enter_ready(&self) -> Option<usize> {
-        let prev = self.0.fetch_or(Self::BUSY, Ordering::Relaxed);
+        let prev = self.0.fetch_or(Self::BUSY, Ordering::Acquire);
         if (prev & Self::READY != 0) && (prev & Self::BUSY == 0) {
             Some((prev & Self::LEN_MASK) as usize)
         } else {
-            self.0.store(prev, Ordering::Relaxed);
+            self.0.store(prev, Ordering::Release);
             None
         }
+    }
+
+    pub(crate) fn unset_busy(&self) {
+        self.0.fetch_and(!Self::BUSY, Ordering::Release);
     }
 
     pub(crate) fn is_busy(&self) -> bool {
@@ -35,7 +39,7 @@ impl State {
     }
 
     pub(crate) fn set_idle(&self) {
-        self.0.store(0, Ordering::Relaxed);
+        self.0.store(0, Ordering::Release);
     }
 
     pub(crate) fn set_ready(&self) {
@@ -43,7 +47,7 @@ impl State {
     }
 
     pub(crate) fn set_ready_with(&self, len: usize) {
-        self.0.store(Self::READY | len as u64, Ordering::Relaxed);
+        self.0.store(Self::READY | len as u64, Ordering::Release);
     }
 
     pub(crate) fn set_canceled(&self) {

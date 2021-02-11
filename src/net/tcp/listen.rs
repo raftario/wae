@@ -132,19 +132,23 @@ impl TcpListener {
 
     #[inline]
     pub async fn accept(&mut self) -> io::Result<(TcpStream, SocketAddr)> {
-        self.accept_with_capacity(None, None).await
+        self.accept_with_capacity(None, false, None, false).await
     }
 
     #[inline]
     pub async fn accept_with_capacity(
         &mut self,
         read_capacity: impl Into<Option<usize>>,
+        read_capacity_fixed: bool,
         write_capacity: impl Into<Option<usize>>,
+        write_capacity_fixed: bool,
     ) -> io::Result<(TcpStream, SocketAddr)> {
         Incoming {
             listener: self,
             read_capacity: read_capacity.into(),
             write_capacity: write_capacity.into(),
+            read_capacity_fixed,
+            write_capacity_fixed,
         }
         .await
     }
@@ -153,14 +157,16 @@ impl TcpListener {
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
-        self.poll_accept_with_capacity(cx, None, None)
+        self.poll_accept_with_capacity(cx, None, false, None, false)
     }
 
     pub fn poll_accept_with_capacity(
         &mut self,
         cx: &mut Context<'_>,
         read_capacity: impl Into<Option<usize>>,
+        read_capacity_fixed: bool,
         write_capacity: impl Into<Option<usize>>,
+        write_capacity_fixed: bool,
     ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
         let socket = *self.socket;
         let acceptex = self.acceptex;
@@ -221,7 +227,9 @@ impl TcpListener {
                     IO::new(
                         next,
                         read_capacity,
+                        read_capacity_fixed,
                         write_capacity,
+                        write_capacity_fixed,
                         &handle.callback_environ(),
                     )
                 }?;
@@ -233,18 +241,22 @@ impl TcpListener {
     }
 
     pub fn incoming(&mut self) -> Incoming<'_> {
-        self.incoming_with_capacity(None, None)
+        self.incoming_with_capacity(None, false, None, false)
     }
 
     pub fn incoming_with_capacity(
         &mut self,
         read_capacity: impl Into<Option<usize>>,
+        read_capacity_fixed: bool,
         write_capacity: impl Into<Option<usize>>,
+        write_capacity_fixed: bool,
     ) -> Incoming<'_> {
         Incoming {
             listener: self,
             read_capacity: read_capacity.into(),
+            read_capacity_fixed,
             write_capacity: write_capacity.into(),
+            write_capacity_fixed,
         }
     }
 }
@@ -254,9 +266,16 @@ impl Future for Incoming<'_> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let read_capacity = self.read_capacity;
+        let read_capacity_fixed = self.read_capacity_fixed;
         let write_capacity = self.write_capacity;
-        self.listener
-            .poll_accept_with_capacity(cx, read_capacity, write_capacity)
+        let write_capacity_fixed = self.write_capacity_fixed;
+        self.listener.poll_accept_with_capacity(
+            cx,
+            read_capacity,
+            read_capacity_fixed,
+            write_capacity,
+            write_capacity_fixed,
+        )
     }
 }
 
@@ -265,11 +284,16 @@ impl Stream for Incoming<'_> {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let read_capacity = self.read_capacity;
+        let read_capacity_fixed = self.read_capacity_fixed;
         let write_capacity = self.write_capacity;
-        match self
-            .listener
-            .poll_accept_with_capacity(cx, read_capacity, write_capacity)
-        {
+        let write_capacity_fixed = self.write_capacity_fixed;
+        match self.listener.poll_accept_with_capacity(
+            cx,
+            read_capacity,
+            read_capacity_fixed,
+            write_capacity,
+            write_capacity_fixed,
+        ) {
             Poll::Ready(output) => Poll::Ready(Some(output)),
             Poll::Pending => Poll::Pending,
         }

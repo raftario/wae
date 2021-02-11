@@ -5,7 +5,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures_io::AsyncWrite;
 use winapi::{
     shared::{minwindef::TRUE, ws2def::WSABUF},
     um::{
@@ -14,7 +13,10 @@ use winapi::{
     },
 };
 
-use super::{socket::TcpSocket, TcpStream};
+use futures_io::AsyncWrite;
+use pin_utils::pin_mut;
+
+use super::{socket::TcpSocket, TcpStream, WriteHalf};
 
 fn schedule(
     socket: &TcpSocket,
@@ -63,8 +65,67 @@ impl AsyncWrite for TcpStream {
     }
 }
 
+impl AsyncWrite for WriteHalf {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let inner = &mut self.inner;
+        pin_mut!(inner);
+        AsyncWrite::poll_write(inner, cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner = &mut self.inner;
+        pin_mut!(inner);
+        AsyncWrite::poll_flush(inner, cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let inner = &mut self.inner;
+        pin_mut!(inner);
+        AsyncWrite::poll_close(inner, cx)
+    }
+}
+
+impl TcpStream {
+    pub fn write_capacity(&self) -> (usize, bool) {
+        self.inner.write_capacity()
+    }
+
+    pub fn set_write_capacity(&mut self, capacity: impl Into<Option<usize>>, fixed: bool) -> bool {
+        unsafe { self.inner.set_write_capacity(capacity.into(), fixed) }
+    }
+}
+
+impl WriteHalf {
+    pub fn set_write_capacity(&mut self, capacity: impl Into<Option<usize>>, fixed: bool) -> bool {
+        self.inner.set_write_capacity(capacity.into(), fixed)
+    }
+}
+
 #[cfg(feature = "tokio")]
 impl tokio::io::AsyncWrite for TcpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        AsyncWrite::poll_write(self, cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        AsyncWrite::poll_flush(self, cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        AsyncWrite::poll_close(self, cx)
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl tokio::io::AsyncWrite for WriteHalf {
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

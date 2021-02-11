@@ -37,7 +37,7 @@ struct IOHalf {
     state: State,
     buffer: WSABUF,
     capacity: usize,
-    fixed: bool,
+    capacity_fixed: bool,
     waker: Mutex<Option<Waker>>,
     error: Cell<Option<NonZeroU32>>,
     overlapped: OVERLAPPED,
@@ -85,7 +85,9 @@ impl<T: Handle> IO<T> {
     pub(crate) unsafe fn new<H>(
         handle: T,
         read_capacity: usize,
+        read_capacity_fixed: bool,
         write_capacity: usize,
+        write_capacity_fixed: bool,
         callback_environ: &TP_CALLBACK_ENVIRON_V3,
     ) -> io::Result<H>
     where
@@ -93,8 +95,8 @@ impl<T: Handle> IO<T> {
     {
         let handle = ManuallyDrop::new(handle);
         let handle = handle.as_handle();
-        let read_half = UnsafeCell::new(IOHalf::new(read_capacity));
-        let write_half = UnsafeCell::new(IOHalf::new(write_capacity));
+        let read_half = UnsafeCell::new(IOHalf::new(read_capacity, read_capacity_fixed));
+        let write_half = UnsafeCell::new(IOHalf::new(write_capacity, write_capacity_fixed));
         let overlapped = H::new(Self {
             handle,
             tp_io: ptr::null_mut(),
@@ -123,6 +125,7 @@ impl<T: Handle> IO<T> {
         cx: &mut Context<'_>,
         ptr: *mut u8,
         len: usize,
+        peek: bool,
         schedule: S,
     ) -> Poll<io::Result<usize>>
     where
@@ -143,7 +146,11 @@ impl<T: Handle> IO<T> {
                 Poll::Pending => Poll::Pending,
                 Poll::Ready(Ok(n)) => {
                     ptr::copy_nonoverlapping(half.buffer.buf as *mut u8, ptr, n);
-                    half.state.set_idle();
+                    if peek {
+                        half.state.unset_busy();
+                    } else {
+                        half.state.set_idle();
+                    }
                     Poll::Ready(Ok(n))
                 }
                 Poll::Ready(Err(err)) => {
@@ -160,7 +167,9 @@ impl<T: Handle> IO<T> {
             let read = usize::min(n, len);
             ptr::copy_nonoverlapping(half.buffer.buf as *mut u8, ptr, read);
 
-            if read < n {
+            if peek {
+                half.state.unset_busy();
+            } else if read < n {
                 let rem = n - read;
                 ptr::copy(half.buffer.buf.add(read), half.buffer.buf, rem);
                 half.state.set_ready_with(rem);
@@ -254,6 +263,22 @@ impl<T: Handle> IO<T> {
         self.write_half().capacity()
     }
 
+    pub(crate) unsafe fn set_read_capacity(&self, capacity: Option<usize>, fixed: bool) -> bool {
+        let half = &mut *self.read_half.get();
+        match capacity {
+            Some(capacity) => half.set_capacity(capacity) && half.set_capacity_fixed(fixed),
+            None => half.set_capacity_fixed(fixed),
+        }
+    }
+
+    pub(crate) unsafe fn set_write_capacity(&self, capacity: Option<usize>, fixed: bool) -> bool {
+        let half = &mut *self.write_half.get();
+        match capacity {
+            Some(capacity) => half.set_capacity(capacity) && half.set_capacity_fixed(fixed),
+            None => half.set_capacity_fixed(fixed),
+        }
+    }
+
     fn read_half(&self) -> &IOHalf {
         unsafe { &*self.read_half.get() }
     }
@@ -275,7 +300,7 @@ impl<T: Handle> IO<T> {
 }
 
 impl IOHalf {
-    fn new(capacity: usize) -> Self {
+    fn new(capacity: usize, capacity_fixed: bool) -> Self {
         let buf_layout = Layout::array::<u8>(capacity).unwrap();
         let buf = unsafe { alloc::alloc(buf_layout) };
         if buf.is_null() {
@@ -289,7 +314,7 @@ impl IOHalf {
                 buf: buf as *mut i8,
             },
             capacity,
-            fixed: false,
+            capacity_fixed,
             waker: Mutex::new(None),
             error: Cell::new(None),
             overlapped: OVERLAPPED::default(),
@@ -297,7 +322,7 @@ impl IOHalf {
     }
 
     fn capacity(&self) -> (usize, bool) {
-        (self.capacity, self.fixed)
+        (self.capacity, self.capacity_fixed)
     }
 
     fn set_capacity(&mut self, capacity: usize) -> bool {
@@ -318,8 +343,16 @@ impl IOHalf {
         true
     }
 
+    fn set_capacity_fixed(&mut self, capacity_fixed: bool) -> bool {
+        if self.state.is_busy() {
+            return false;
+        }
+        self.capacity_fixed = capacity_fixed;
+        true
+    }
+
     fn fit(&mut self, len: usize) {
-        if !self.fixed && len > self.capacity {
+        if !self.capacity_fixed && len > self.capacity {
             let capacity = usize::max(self.capacity * 2, len);
             self.set_capacity(capacity);
         }

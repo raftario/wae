@@ -1,8 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
-use crate::threadpool::Handle;
-
 use super::get_addr_info::get_addr_info;
+use crate::threadpool::Handle;
 
 pub trait ToSocketAddrs {
     fn to_socket_addrs(&self) -> sealed::ToSocketAddrs<'_>;

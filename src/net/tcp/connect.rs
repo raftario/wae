@@ -36,13 +36,15 @@ impl TcpStream {
 
     #[inline]
     pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
-        TcpStream::connect_with_capacity(addr, None, None).await
+        TcpStream::connect_with_capacity(addr, None, false, None, false).await
     }
 
     pub async fn connect_with_capacity<A: ToSocketAddrs>(
         addr: A,
         read_capacity: impl Into<Option<usize>>,
+        read_capacity_fixed: bool,
         write_capacity: impl Into<Option<usize>>,
+        write_capacity_fixed: bool,
     ) -> io::Result<TcpStream> {
         let handle = Handle::current();
 
@@ -138,7 +140,9 @@ impl TcpStream {
                     IO::new(
                         socket,
                         read_capacity,
+                        read_capacity_fixed,
                         write_capacity,
+                        write_capacity_fixed,
                         &handle.callback_environ(),
                     )
                 }?;

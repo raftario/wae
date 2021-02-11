@@ -30,8 +30,44 @@ pub struct TcpListener {
 pub struct Incoming<'a> {
     listener: &'a mut TcpListener,
     read_capacity: Option<usize>,
+    read_capacity_fixed: bool,
     write_capacity: Option<usize>,
+    write_capacity_fixed: bool,
 }
+
+pub struct ReadHalf {
+    inner: TcpStream,
+}
+
+pub struct WriteHalf {
+    inner: TcpStream,
+}
+
+impl TcpStream {
+    pub fn split(self) -> (ReadHalf, WriteHalf) {
+        (
+            ReadHalf {
+                inner: Self {
+                    inner: self.inner.clone(),
+                },
+            },
+            WriteHalf { inner: self },
+        )
+    }
+}
+
+impl AsRef<TcpStream> for ReadHalf {
+    fn as_ref(&self) -> &TcpStream {
+        &self.inner
+    }
+}
+
+impl AsRef<TcpStream> for WriteHalf {
+    fn as_ref(&self) -> &TcpStream {
+        &self.inner
+    }
+}
+
 impl fmt::Debug for TcpStream {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut dbg = f.debug_struct("TcpListener");
@@ -60,5 +96,39 @@ impl fmt::Debug for TcpListener {
         }
 
         dbg.finish()
+    }
+}
+
+impl fmt::Debug for ReadHalf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_struct("ReadHalf");
+        dbg.field("socket", &*self.inner.inner.handle());
+
+        if let Ok(addr) = self.inner.local_addr() {
+            dbg.field("addr", &addr);
+        }
+        if let Ok(addr) = self.inner.peer_addr() {
+            dbg.field("peer", &addr);
+        }
+
+        dbg.field("capacity", &self.inner.inner.read_capacity())
+            .finish()
+    }
+}
+
+impl fmt::Debug for WriteHalf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_struct("WriteHalf");
+        dbg.field("socket", &*self.inner.inner.handle());
+
+        if let Ok(addr) = self.inner.local_addr() {
+            dbg.field("addr", &addr);
+        }
+        if let Ok(addr) = self.inner.peer_addr() {
+            dbg.field("peer", &addr);
+        }
+
+        dbg.field("capacity", &self.inner.inner.write_capacity())
+            .finish()
     }
 }
