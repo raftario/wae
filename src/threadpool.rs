@@ -280,7 +280,7 @@ impl Deref for Threadpool {
 }
 
 impl fmt::Debug for Handle {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Handle")
             .field("pool", &self.inner.callback_environ.Pool)
             .field("priority", &self.priority)

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, marker::PhantomData};
+use std::{cell::RefCell, fmt, marker::PhantomData};
 
 use crate::threadpool::Handle;
 
@@ -10,12 +10,19 @@ pub struct ContextGuard<'a> {
     previous: Option<Handle>,
     _marker: PhantomData<&'a Handle>,
 }
+
 impl Drop for ContextGuard<'_> {
     fn drop(&mut self) {
         HANDLE.with(|h| {
             let mut h = h.borrow_mut();
             *h = self.previous.take();
         })
+    }
+}
+
+impl fmt::Debug for ContextGuard<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ContextGuard").finish()
     }
 }
 
@@ -31,7 +38,7 @@ impl Handle {
         })
     }
 
-    pub fn enter(&self) -> ContextGuard {
+    pub fn enter(&self) -> ContextGuard<'_> {
         HANDLE.with(|h| {
             let mut h = h.borrow_mut();
             let previous = h.replace(self.clone());
@@ -43,7 +50,7 @@ impl Handle {
     }
 
     #[cfg(feature = "tracing")]
-    pub(crate) fn enter_span(&self) -> Option<tracing::span::Entered> {
+    pub(crate) fn enter_span(&self) -> Option<tracing::span::Entered<'_>> {
         self.span.as_ref().map(|span| span.enter())
     }
 }

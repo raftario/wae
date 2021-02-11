@@ -22,7 +22,7 @@ pub struct JoinHandle<T> {
 impl<T> Future for JoinHandle<T> {
     type Output = T;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let task = &mut *self.task;
         pin_mut!(task);
         task.poll(cx)
@@ -46,7 +46,7 @@ impl<T> Drop for JoinHandle<T> {
 }
 
 impl<T> fmt::Debug for JoinHandle<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JoinHandle")
             .field("task", &*self.task)
             .finish()

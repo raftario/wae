@@ -164,7 +164,7 @@ struct Connect<'a> {
 impl Future for Connect<'_> {
     type Output = io::Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let socket = self.socket;
         let connectex = self.connectex;
         let addr = self.addr;

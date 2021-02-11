@@ -120,7 +120,7 @@ impl<T: Handle> IO<T> {
 
     pub(crate) unsafe fn poll_read<S>(
         &self,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         ptr: *mut u8,
         len: usize,
         schedule: S,
@@ -177,7 +177,7 @@ impl<T: Handle> IO<T> {
 
     pub(crate) unsafe fn poll_write<S>(
         &self,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         ptr: *const u8,
         len: usize,
         schedule: S,

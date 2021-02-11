@@ -149,13 +149,16 @@ impl TcpListener {
         .await
     }
 
-    pub fn poll_accept(&mut self, cx: &mut Context) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
+    pub fn poll_accept(
+        &mut self,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
         self.poll_accept_with_capacity(cx, None, None)
     }
 
     pub fn poll_accept_with_capacity(
         &mut self,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         read_capacity: impl Into<Option<usize>>,
         write_capacity: impl Into<Option<usize>>,
     ) -> Poll<io::Result<(TcpStream, SocketAddr)>> {
@@ -229,7 +232,7 @@ impl TcpListener {
         }
     }
 
-    pub fn incoming(&mut self) -> Incoming {
+    pub fn incoming(&mut self) -> Incoming<'_> {
         self.incoming_with_capacity(None, None)
     }
 
@@ -237,7 +240,7 @@ impl TcpListener {
         &mut self,
         read_capacity: impl Into<Option<usize>>,
         write_capacity: impl Into<Option<usize>>,
-    ) -> Incoming {
+    ) -> Incoming<'_> {
         Incoming {
             listener: self,
             read_capacity: read_capacity.into(),
@@ -249,7 +252,7 @@ impl TcpListener {
 impl Future for Incoming<'_> {
     type Output = io::Result<(TcpStream, SocketAddr)>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let read_capacity = self.read_capacity;
         let write_capacity = self.write_capacity;
         self.listener
@@ -260,7 +263,7 @@ impl Future for Incoming<'_> {
 impl Stream for Incoming<'_> {
     type Item = io::Result<(TcpStream, SocketAddr)>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let read_capacity = self.read_capacity;
         let write_capacity = self.write_capacity;
         match self

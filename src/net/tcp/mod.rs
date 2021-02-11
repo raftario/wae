@@ -33,7 +33,7 @@ pub struct Incoming<'a> {
     write_capacity: Option<usize>,
 }
 impl fmt::Debug for TcpStream {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut dbg = f.debug_struct("TcpListener");
         dbg.field("socket", &*self.inner.handle());
 
@@ -51,7 +51,7 @@ impl fmt::Debug for TcpStream {
 }
 
 impl fmt::Debug for TcpListener {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut dbg = f.debug_struct("TcpListener");
         dbg.field("socket", &self.socket);
 

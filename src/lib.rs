@@ -1,4 +1,6 @@
 #![cfg(windows)]
+#![warn(rust_2018_idioms)]
+#![warn(missing_debug_implementations)]
 
 #[cfg(feature = "net")]
 pub mod net;

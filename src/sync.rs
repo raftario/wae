@@ -9,7 +9,7 @@ impl<T> Mutex<T> {
         Self(std::sync::Mutex::new(t))
     }
 
-    pub(crate) fn lock(&self) -> std::sync::MutexGuard<T> {
+    pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, T> {
         self.0.lock().unwrap()
     }
 }

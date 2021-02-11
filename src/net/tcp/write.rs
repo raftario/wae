@@ -43,15 +43,19 @@ fn schedule(
 }
 
 impl AsyncWrite for TcpStream {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
         unsafe { self.inner.poll_write(cx, buf.as_ptr(), buf.len(), schedule) }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match unsafe { shutdown(**self.inner.handle(), SD_SEND) } {
             0 => Poll::Ready(Ok(())),
             _ => Poll::Ready(Err(io::Error::last_os_error())),
@@ -63,17 +67,17 @@ impl AsyncWrite for TcpStream {
 impl tokio::io::AsyncWrite for TcpStream {
     fn poll_write(
         self: Pin<&mut Self>,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         AsyncWrite::poll_write(self, cx, buf)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         AsyncWrite::poll_flush(self, cx)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         AsyncWrite::poll_close(self, cx)
     }
 }

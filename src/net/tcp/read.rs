@@ -57,7 +57,7 @@ fn schedule(
 impl AsyncRead for TcpStream {
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         unsafe {
@@ -71,8 +71,8 @@ impl AsyncRead for TcpStream {
 impl tokio::io::AsyncRead for TcpStream {
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut tokio::io::ReadBuf,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         unsafe {
             let recv_buf = buf.unfilled_mut();

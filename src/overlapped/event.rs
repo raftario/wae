@@ -87,7 +87,7 @@ impl Event {
 
     pub(crate) fn poll<S>(
         &self,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         handle: Option<HANDLE>,
         schedule: S,
     ) -> Poll<io::Result<()>>

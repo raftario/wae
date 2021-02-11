@@ -19,7 +19,7 @@ use socket2::SockAddr;
 
 use crate::overlapped::event::Event;
 
-pub(crate) fn get_addr_info(
+pub(super) fn get_addr_info(
     host: &str,
     port: Option<u16>,
     callback_environ: &TP_CALLBACK_ENVIRON_V3,
@@ -56,7 +56,7 @@ fn to_wstr(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(iter::once(0)).collect()
 }
 
-pub struct GetAddrInfoFuture {
+pub(super) struct GetAddrInfoFuture {
     host: Vec<u16>,
     port: Option<Vec<u16>>,
     inner: Box<GetAddrInfoFutureInner>,
@@ -74,7 +74,7 @@ struct GetAddrInfoFutureInner {
 impl Future for GetAddrInfoFuture {
     type Output = io::Result<GetAddrInfoIter>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let host = self.host.as_ptr();
         let port = self
             .port
@@ -127,7 +127,7 @@ impl Future for GetAddrInfoFuture {
     }
 }
 
-pub struct GetAddrInfoIter {
+pub(super) struct GetAddrInfoIter {
     addrinfo: *mut ADDRINFOEXW,
     current: *mut ADDRINFOEXW,
 }
