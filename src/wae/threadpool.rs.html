@@ -336,15 +336,6 @@
 <span id="333">333</span>
 <span id="334">334</span>
 <span id="335">335</span>
-<span id="336">336</span>
-<span id="337">337</span>
-<span id="338">338</span>
-<span id="339">339</span>
-<span id="340">340</span>
-<span id="341">341</span>
-<span id="342">342</span>
-<span id="343">343</span>
-<span id="344">344</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cmp</span>::<span class="ident">Ordering</span>, <span class="ident">ffi</span>::<span class="ident">c_void</span>, <span class="ident">fmt</span>, <span class="ident">io</span>, <span class="ident">mem</span>, <span class="ident">ops</span>::<span class="ident">Deref</span>, <span class="ident">ptr</span>, <span class="ident">sync</span>::<span class="ident">Arc</span>};
 
@@ -369,6 +360,7 @@
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">context</span>::<span class="ident">ContextGuard</span>;
 
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Threadpool</span> {
     <span class="ident">handle</span>: <span class="ident">Handle</span>,
 }
@@ -417,7 +409,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Threadpool</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">io</span>::<span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Threadpool</span><span class="op">&gt;</span> {
         <span class="ident">Builder</span>::<span class="ident">default</span>().<span class="ident">build</span>()
     }
 
@@ -444,11 +436,6 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ce</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">callback_environ</span>;
         <span class="ident">ce</span>.<span class="ident">CallbackPriority</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">priority</span> <span class="kw">as</span> <span class="ident">u32</span>;
         <span class="ident">ce</span>
-    }
-
-    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>))]</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">pool</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">winapi</span>::<span class="ident">um</span>::<span class="ident">winnt</span>::<span class="ident">PTP_POOL</span> {
-        <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">callback_environ</span>.<span class="ident">Pool</span>
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">set_max_threads</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">maximum</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="self">Self</span> {
@@ -480,7 +467,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">Builder</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Builder</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">system_info</span> <span class="op">=</span> <span class="ident">SYSTEM_INFO</span>::<span class="ident">default</span>();
         <span class="kw">unsafe</span> { <span class="ident">GetSystemInfo</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">system_info</span>) };
 
@@ -492,18 +479,18 @@
         }
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">min_threads</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">max</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">min_threads</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">max</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Builder</span> {
         <span class="self">self</span>.<span class="ident">max_threads</span> <span class="op">=</span> <span class="ident">max</span>;
         <span class="self">self</span>
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">max_threads</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">min</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">max_threads</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">min</span>: <span class="ident">u32</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Builder</span> {
         <span class="self">self</span>.<span class="ident">min_threads</span> <span class="op">=</span> <span class="ident">min</span>;
         <span class="self">self</span>
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;net&quot;</span>)]</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">net</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">enabled</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">net</span>(<span class="kw-2">mut</span> <span class="self">self</span>, <span class="ident">enabled</span>: <span class="ident">bool</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Builder</span> {
         <span class="self">self</span>.<span class="ident">net</span> <span class="op">=</span> <span class="ident">enabled</span>;
         <span class="self">self</span>
     }
@@ -631,16 +618,11 @@
     }
 }
 
-<span class="kw">impl</span> <span class="ident">fmt</span>::<span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Threadpool</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
-        <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;Threadpool&quot;</span>).<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">handle</span>).<span class="ident">finish</span>()
-    }
-}
-
 <span class="kw">impl</span> <span class="ident">fmt</span>::<span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">Handle</span> {
-    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
-        <span class="ident">f</span>.<span class="ident">debug_tuple</span>(<span class="string">&quot;Handle&quot;</span>)
-            .<span class="ident">field</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">callback_environ</span>.<span class="ident">Pool</span>)
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+        <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;Handle&quot;</span>)
+            .<span class="ident">field</span>(<span class="string">&quot;pool&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">callback_environ</span>.<span class="ident">Pool</span>)
+            .<span class="ident">field</span>(<span class="string">&quot;priority&quot;</span>, <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">priority</span>)
             .<span class="ident">finish</span>()
     }
 }

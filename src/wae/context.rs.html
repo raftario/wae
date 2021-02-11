@@ -50,8 +50,19 @@
 <span id="47">47</span>
 <span id="48">48</span>
 <span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cell</span>::<span class="ident">RefCell</span>, <span class="ident">marker</span>::<span class="ident">PhantomData</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">cell</span>::<span class="ident">RefCell</span>, <span class="ident">fmt</span>, <span class="ident">marker</span>::<span class="ident">PhantomData</span>};
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">threadpool</span>::<span class="ident">Handle</span>;
 
@@ -63,6 +74,7 @@
     <span class="ident">previous</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Handle</span><span class="op">&gt;</span>,
     <span class="ident">_marker</span>: <span class="ident">PhantomData</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">Handle</span><span class="op">&gt;</span>,
 }
+
 <span class="kw">impl</span> <span class="ident">Drop</span> <span class="kw">for</span> <span class="ident">ContextGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="kw">fn</span> <span class="ident">drop</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="self">self</span>) {
         <span class="ident">HANDLE</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">h</span><span class="op">|</span> {
@@ -72,19 +84,25 @@
     }
 }
 
+<span class="kw">impl</span> <span class="ident">fmt</span>::<span class="ident">Debug</span> <span class="kw">for</span> <span class="ident">ContextGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">fmt</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">fmt</span>::<span class="ident">Formatter</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="prelude-ty">Result</span> {
+        <span class="ident">f</span>.<span class="ident">debug_struct</span>(<span class="string">&quot;ContextGuard&quot;</span>).<span class="ident">finish</span>()
+    }
+}
+
 <span class="kw">impl</span> <span class="ident">Handle</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Handle</span> {
         <span class="self">Self</span>::<span class="ident">try_current</span>().<span class="ident">expect</span>(<span class="string">&quot;no wae context&quot;</span>)
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_current</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="self">Self</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">try_current</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Handle</span><span class="op">&gt;</span> {
         <span class="ident">HANDLE</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">h</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="ident">h</span> <span class="op">=</span> <span class="ident">h</span>.<span class="ident">borrow</span>();
             <span class="ident">h</span>.<span class="ident">clone</span>()
         })
     }
 
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enter</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ContextGuard</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">enter</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">ContextGuard</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
         <span class="ident">HANDLE</span>.<span class="ident">with</span>(<span class="op">|</span><span class="ident">h</span><span class="op">|</span> {
             <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">h</span> <span class="op">=</span> <span class="ident">h</span>.<span class="ident">borrow_mut</span>();
             <span class="kw">let</span> <span class="ident">previous</span> <span class="op">=</span> <span class="ident">h</span>.<span class="ident">replace</span>(<span class="self">self</span>.<span class="ident">clone</span>());
@@ -96,9 +114,13 @@
     }
 
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;tracing&quot;</span>)]</span>
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">enter_span</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">tracing</span>::<span class="ident">span</span>::<span class="ident">Entered</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">enter_span</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">tracing</span>::<span class="ident">span</span>::<span class="ident">Entered</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="self">self</span>.<span class="ident">span</span>.<span class="ident">as_ref</span>().<span class="ident">map</span>(<span class="op">|</span><span class="ident">span</span><span class="op">|</span> <span class="ident">span</span>.<span class="ident">enter</span>())
     }
+}
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">current</span>() <span class="op">-</span><span class="op">&gt;</span> <span class="ident">Handle</span> {
+    <span class="ident">Handle</span>::<span class="ident">current</span>()
 }
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="wae"></div>

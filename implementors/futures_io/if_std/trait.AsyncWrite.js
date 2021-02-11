@@ -1,3 +1,3 @@
 (function() {var implementors = {};
-implementors["wae"] = [{"text":"impl AsyncWrite for <a class=\"struct\" href=\"wae/net/struct.TcpStream.html\" title=\"struct wae::net::TcpStream\">TcpStream</a>","synthetic":false,"types":["wae::net::tcp::TcpStream"]}];
+implementors["wae"] = [{"text":"impl AsyncWrite for <a class=\"struct\" href=\"wae/net/struct.TcpStream.html\" title=\"struct wae::net::TcpStream\">TcpStream</a>","synthetic":false,"types":["wae::net::tcp::TcpStream"]},{"text":"impl AsyncWrite for <a class=\"struct\" href=\"wae/net/struct.WriteHalf.html\" title=\"struct wae::net::WriteHalf\">WriteHalf</a>","synthetic":false,"types":["wae::net::tcp::WriteHalf"]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

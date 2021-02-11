@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Incoming",""],["TcpListener",""],["TcpStream",""]],"trait":[["ToSocketAddrs",""]]});
+initSidebarItems({"struct":[["Incoming",""],["ReadHalf",""],["TcpListener",""],["TcpStream",""],["WriteHalf",""]],"trait":[["ToSocketAddrs",""]]});
