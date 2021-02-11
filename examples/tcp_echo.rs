@@ -10,16 +10,16 @@ async fn main() -> Result<(), Error> {
 
     let mut listener = TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
-    println!("Listening on: {}", addr);
+    println!("listening on {}", addr);
 
     loop {
-        let (mut socket, _) = listener.accept().await?;
+        let (mut stream, _) = listener.accept().await?;
 
         wae::spawn(async move {
             let mut buf = vec![0; 1024];
 
             loop {
-                let n = socket
+                let n = stream
                     .read(&mut buf)
                     .await
                     .expect("failed to read data from socket");
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Error> {
                     return;
                 }
 
-                socket
+                stream
                     .write_all(&buf[0..n])
                     .await
                     .expect("failed to write data to socket");

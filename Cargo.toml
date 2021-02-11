@@ -77,6 +77,7 @@ docs = ["net", "macros", "tokio"]
 
 [dev-dependencies]
 futures = "0.3.12"
+hyper = { version = "0.14.4", features = ["client", "server", "http1", "http2"] }
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
@@ -92,3 +93,7 @@ required-features = ["net", "macros"]
 name = "tcp-echo"
 path = "examples/tcp_echo.rs"
 required-features = ["net", "macros"]
+[[example]]
+name = "hyper-echo"
+path = "examples/hyper_echo.rs"
+required-features = ["net", "macros", "tokio"]
