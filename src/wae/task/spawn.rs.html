@@ -124,7 +124,7 @@
 };
 
 <span class="kw">use</span> <span class="ident">async_task</span>::{<span class="ident">Runnable</span>, <span class="ident">Task</span>};
-<span class="kw">use</span> <span class="ident">crossbeam_queue</span>::<span class="ident">SegQueue</span>;
+<span class="kw">use</span> <span class="ident">concurrent_queue</span>::<span class="ident">ConcurrentQueue</span>;
 <span class="kw">use</span> <span class="ident">pin_utils</span>::<span class="ident">pin_mut</span>;
 
 <span class="kw">use</span> <span class="ident">winapi</span>::<span class="ident">um</span>::<span class="ident">winnt</span>::{<span class="ident">PTP_CALLBACK_INSTANCE</span>, <span class="ident">PTP_WORK</span>};
@@ -174,7 +174,7 @@
     <span class="ident">context</span>: <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="ident">c_void</span>,
     <span class="ident">_work</span>: <span class="ident">PTP_WORK</span>,
 ) {
-    <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">context</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">SegQueue</span><span class="op">&lt;</span>(<span class="ident">Runnable</span>, <span class="ident">Handle</span>)<span class="op">&gt;</span>;
+    <span class="kw">let</span> <span class="ident">context</span> <span class="op">=</span> <span class="ident">context</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw">const</span> <span class="ident">ConcurrentQueue</span><span class="op">&lt;</span>(<span class="ident">Runnable</span>, <span class="ident">Handle</span>)<span class="op">&gt;</span>;
     <span class="kw">let</span> <span class="ident">queue</span> <span class="op">=</span> <span class="kw-2">&amp;</span><span class="kw-2">*</span><span class="ident">context</span>;
     <span class="kw">let</span> (<span class="ident">runnable</span>, <span class="kw-2">mut</span> <span class="ident">handle</span>) <span class="op">=</span> <span class="ident">queue</span>.<span class="ident">pop</span>().<span class="ident">unwrap</span>();
 

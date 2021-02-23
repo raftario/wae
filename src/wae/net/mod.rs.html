@@ -7,11 +7,11 @@
 <span id="4">4</span>
 <span id="5">5</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">mod</span> <span class="ident">socket_addr</span>;
-<span class="kw">mod</span> <span class="ident">tcp</span>;
+<span class="kw">mod</span> <span class="ident">sockaddr</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">tcp</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">socket_addr</span>::<span class="ident">to_socket_addrs</span>::<span class="kw-2">*</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">tcp</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">sockaddr</span>::<span class="ident">to_socket_addrs</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">tcp</span>::{<span class="ident">TcpListener</span>, <span class="ident">TcpStream</span>};
 </pre></div>
 </section><section id="search" class="content hidden"></section><section class="footer"></section><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="wae"></div>
     <script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

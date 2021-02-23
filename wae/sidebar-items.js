@@ -1,1 +1,1 @@
-initSidebarItems({"attr":[["main",""],["test",""]],"fn":[["context",""],["spawn",""]],"mod":[["net",""],["task",""],["threadpool",""]]});
+initSidebarItems({"attr":[["main",""],["test",""]],"fn":[["context",""],["spawn",""]],"mod":[["io",""],["net",""],["task",""],["threadpool",""]]});
