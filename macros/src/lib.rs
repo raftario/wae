@@ -6,9 +6,9 @@ use syn::{parse_macro_input, AttributeArgs, Error, ItemFn, Path};
 #[derive(Debug, FromMeta)]
 struct EntryArgs {
     #[darling(default)]
-    thread_maximum: Option<u32>,
+    max_threads: Option<u32>,
     #[darling(default)]
-    thread_minimum: Option<u32>,
+    min_threads: Option<u32>,
     #[darling(default)]
     path: Option<Path>,
 }
@@ -57,8 +57,8 @@ fn entry(args: EntryArgs, input: ItemFn, test: bool) -> Result<TokenStream, Erro
         block,
     } = input;
     let EntryArgs {
-        thread_maximum,
-        thread_minimum,
+        max_threads,
+        min_threads,
         path,
     } = args;
 
@@ -75,12 +75,12 @@ fn entry(args: EntryArgs, input: ItemFn, test: bool) -> Result<TokenStream, Erro
 
     let path = path.map(|p| quote! { #p }).unwrap_or(quote! { ::wae });
 
-    let thread_maximum = match thread_maximum {
-        Some(maximum) => quote! { .thread_maximum(#maximum) },
+    let max_threads = match max_threads {
+        Some(maximum) => quote! { .max_threads(#maximum) },
         None => quote! {},
     };
-    let thread_minimum = match thread_minimum {
-        Some(minimum) => quote! { .thread_minimum(#minimum) },
+    let min_threads = match min_threads {
+        Some(minimum) => quote! { .min_threads(#minimum) },
         None => quote! {},
     };
 
@@ -89,8 +89,8 @@ fn entry(args: EntryArgs, input: ItemFn, test: bool) -> Result<TokenStream, Erro
         #(#attrs)*
         #vis #sig {
             #path::Threadpool::builder()
-                #thread_maximum
-                #thread_minimum
+                #max_threads
+                #min_threads
                 .build()
                 .unwrap()
                 .block_on(async #block)

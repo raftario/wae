@@ -9,19 +9,33 @@ repository = "https://github.com/raftario/wae.git"
 license = "Apache-2.0"
 keywords = ["win32", "windows", "async", "executor", "threadpool"]
 categories = ["asynchronous", "concurrency"]
-include = [".github/"]
+exclude = [".github/"]
 
 [workspace]
 members = ["macros"]
 
 [dependencies]
 async-task = "4"
-crossbeam-queue = "0.3"
+concurrent-queue = "1"
 pin-utils = "0.1"
 pin-project-lite = "0.2"
-[dependencies.wae-macros]
-path = "macros"
-optional = true
+
+# macros
+wae-macros = { path = "macros", optional = true }
+# io-shared
+atomic-waker = { version = "1", optional = true }
+cache-padded = { version = "1", optional = true }
+# io-futures
+futures-io = { version = "0.3", optional = true }
+# io-tokio
+tokio = { version = "1", optional = true }
+# net
+socket2 = { version = "0.3", optional = true }
+# stream
+futures-core = { version = "0.3", optional = true }
+# tracing
+tracing = { version = "0.1", features = ["std"], default-features = false, optional = true }
+
 [dependencies.winapi]
 version = "0.3.9"
 features = [
@@ -34,46 +48,31 @@ features = [
     "minwindef",
     "impl-default",
 ]
-[dependencies.futures-core]
-version = "0.3"
-optional = true
-[dependencies.futures-io]
-version = "0.3"
-optional = true
-[dependencies.tokio]
-version = "1"
-optional = true
-[dependencies.socket2]
-version = "0.3"
-optional = true
-[dependencies.tracing]
-version = "0.1"
-features = ["std"]
-default-features = false
-optional = true
-[dependencies.parking_lot]
-version = "0.11"
-optional = true
 
 [features]
 default = []
+macros = ["wae-macros"]
+io = ["winapi/ws2def", "winapi/minwinbase"]
+io-ext = []
+io-shared = ["winapi/minwinbase", "atomic-waker", "cache-padded"]
+io-compat = []
+io-futures = ["io-compat", "futures-io"]
+io-tokio = ["io-compat", "tokio"]
 net = [
+    "io",
+    "io-shared",
     "winapi/winsock2",
     "winapi/ws2tcpip",
-    "winapi/ws2def",
     "winapi/ws2ipdef",
     "winapi/mswsock",
     "winapi/inaddr",
     "winapi/in6addr",
     "winapi/ioapiset",
-    "winapi/minwinbase",
-    "winapi/winnt",
     "futures-core",
-    "futures-io",
     "socket2",
 ]
-macros = ["wae-macros"]
-docs = ["net", "macros", "tokio"]
+stream = ["futures-core"]
+docs = ["macros", "io-ext", "io-tokio", "io-futures", "net", "stream"]
 
 [dev-dependencies]
 futures = "0.3.12"
@@ -87,13 +86,4 @@ features = ["docs"]
 [[test]]
 name = "tcp"
 path = "tests/tcp.rs"
-required-features = ["net", "macros"]
-
-[[example]]
-name = "tcp-echo"
-path = "examples/tcp_echo.rs"
-required-features = ["net", "macros"]
-[[example]]
-name = "hyper-echo"
-path = "examples/hyper_echo.rs"
-required-features = ["net", "macros", "tokio"]
+required-features = ["macros", "io-ext", "net"]

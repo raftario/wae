@@ -120,7 +120,7 @@ mod sealed {
 
     use pin_project_lite::pin_project;
 
-    use crate::net::socket_addr::get_addr_info::{GetAddrInfoFuture, GetAddrInfoIter};
+    use crate::net::sockaddr::get_addr_info::{GetAddrInfoFuture, GetAddrInfoIter};
 
     pin_project! {
         pub struct ToSocketAddrs<'a> {

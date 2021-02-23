@@ -1,5 +1,5 @@
-mod socket_addr;
-mod tcp;
+mod sockaddr;
+pub mod tcp;
 
-pub use socket_addr::to_socket_addrs::*;
-pub use tcp::*;
+pub use sockaddr::to_socket_addrs::*;
+pub use tcp::{TcpListener, TcpStream};

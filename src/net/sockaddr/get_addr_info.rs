@@ -1,12 +1,13 @@
 use std::{
+    ffi::OsStr,
     future::Future,
     io, iter,
     net::SocketAddr,
+    os::windows::ffi::OsStrExt,
     pin::Pin,
     ptr::{self},
     task::{Context, Poll},
 };
-
 use winapi::{
     shared::ws2def::{ADDRINFOEXW, AF_UNSPEC, NS_ALL},
     um::{
@@ -17,7 +18,7 @@ use winapi::{
 
 use socket2::SockAddr;
 
-use crate::overlapped::event::Event;
+use crate::io::shared::IoEvent;
 
 pub(super) fn get_addr_info(
     host: &str,
@@ -42,7 +43,7 @@ pub(super) fn get_addr_info(
             ..Default::default()
         },
     });
-    let event = Event::new(callback_environ);
+    let event = IoEvent::new(callback_environ);
 
     GetAddrInfoFuture {
         host,
@@ -53,14 +54,14 @@ pub(super) fn get_addr_info(
 }
 
 fn to_wstr(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(iter::once(0)).collect()
+    OsStr::new(s).encode_wide().chain(iter::once(0)).collect()
 }
 
 pub(super) struct GetAddrInfoFuture {
     host: Vec<u16>,
     port: Option<Vec<u16>>,
     inner: Box<GetAddrInfoFutureInner>,
-    event: io::Result<Box<Event>>,
+    event: io::Result<Box<IoEvent>>,
 }
 
 unsafe impl Send for GetAddrInfoFuture {}

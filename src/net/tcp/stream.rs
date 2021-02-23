@@ -1,12 +1,16 @@
 use std::{
     ffi::c_void,
+    fmt,
     future::Future,
     io, mem,
+    net::{Shutdown, SocketAddr},
+    os::windows::io::FromRawSocket,
     pin::Pin,
     ptr::{self},
+    sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
-
 use winapi::{
     shared::{
         guiddef::GUID,
@@ -21,37 +25,39 @@ use winapi::{
     },
 };
 
-use socket2::SockAddr;
+use socket2::{SockAddr, Socket};
 
-use super::{socket::TcpSocket, TcpStream};
 use crate::{
+    io::shared::{IoEvent, IoHandle},
     net::ToSocketAddrs,
-    overlapped::{event::Event, io::IO},
     threadpool::Handle,
     util::Extract,
 };
 
-impl TcpStream {
-    pub const DEFAULT_CAPACITY: usize = 1024;
+pub struct TcpStream {
+    pub(super) inner: Arc<IoHandle>,
+}
 
+struct Connect<'a> {
+    connectex: <LPFN_CONNECTEX as Extract>::Inner,
+    socket: SOCKET,
+    event: &'a IoEvent,
+    addr: &'a SOCKADDR,
+    len: i32,
+}
+
+impl TcpStream {
     #[inline]
-    pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
-        TcpStream::connect_with_capacity(addr, None, false, None, false).await
+    fn with_socket<T>(&self, f: impl FnOnce(&Socket) -> T) -> T {
+        let socket = unsafe { Socket::from_raw_socket(self.inner.handle as u64) };
+        let output = f(&socket);
+        mem::forget(socket);
+        output
     }
 
-    pub async fn connect_with_capacity<A: ToSocketAddrs>(
-        addr: A,
-        read_capacity: impl Into<Option<usize>>,
-        read_capacity_fixed: bool,
-        write_capacity: impl Into<Option<usize>>,
-        write_capacity_fixed: bool,
-    ) -> io::Result<TcpStream> {
+    pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
         let handle = Handle::current();
-
-        let read_capacity = read_capacity.into().unwrap_or(Self::DEFAULT_CAPACITY);
-        let write_capacity = write_capacity.into().unwrap_or(Self::DEFAULT_CAPACITY);
-
-        let socket = TcpSocket::new()?;
+        let socket = super::socket::new()?;
 
         let bind_sockaddr = SOCKADDR_IN6 {
             sin6_family: AF_INET as u16,
@@ -61,7 +67,7 @@ impl TcpStream {
         };
         if unsafe {
             bind(
-                *socket,
+                socket,
                 &bind_sockaddr as *const SOCKADDR_IN6 as *const SOCKADDR,
                 mem::size_of::<SOCKADDR_IN6>() as i32,
             )
@@ -75,7 +81,7 @@ impl TcpStream {
             };
             if unsafe {
                 bind(
-                    *socket,
+                    socket,
                     &bind_sockaddr as *const SOCKADDR_IN as *const SOCKADDR,
                     mem::size_of::<SOCKADDR_IN>() as i32,
                 )
@@ -91,7 +97,7 @@ impl TcpStream {
             let mut returned = 0;
 
             let ret = WSAIoctl(
-                *socket,
+                socket,
                 SIO_GET_EXTENSION_FUNCTION_POINTER,
                 &WSAID_CONNECTEX as *const GUID as *mut c_void,
                 mem::size_of::<GUID>() as u32,
@@ -107,7 +113,7 @@ impl TcpStream {
             }
         };
 
-        let event: Box<Event> = Event::new(&handle.callback_environ())?;
+        let event: Box<IoEvent> = IoEvent::new(&handle.callback_environ())?;
 
         let addrs = addr.to_socket_addrs().await?;
 
@@ -121,7 +127,7 @@ impl TcpStream {
 
             result = Connect {
                 connectex,
-                socket: *socket,
+                socket,
                 event: &event,
                 addr: &addr,
                 len,
@@ -136,16 +142,15 @@ impl TcpStream {
 
         match result {
             Ok(()) => {
-                let inner = unsafe {
-                    IO::new(
-                        socket,
-                        read_capacity,
-                        read_capacity_fixed,
-                        write_capacity,
-                        write_capacity_fixed,
-                        &handle.callback_environ(),
-                    )
-                }?;
+                let inner = IoHandle::new(
+                    socket as HANDLE,
+                    super::socket::close,
+                    super::read::schedule,
+                    super::socket::cancel,
+                    super::write::schedule,
+                    super::socket::cancel,
+                    &Handle::current().callback_environ(),
+                )?;
                 Ok(TcpStream { inner })
             }
             Err(err) if tried > 0 => Err(err),
@@ -155,14 +160,42 @@ impl TcpStream {
             )),
         }
     }
-}
 
-struct Connect<'a> {
-    connectex: <LPFN_CONNECTEX as Extract>::Inner,
-    socket: SOCKET,
-    event: &'a Event,
-    addr: &'a SOCKADDR,
-    len: i32,
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.with_socket(|s| s.local_addr().map(|a| a.as_std().unwrap()))
+    }
+
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.with_socket(|s| s.peer_addr().map(|a| a.as_std().unwrap()))
+    }
+
+    pub fn ttl(&self) -> io::Result<u32> {
+        self.with_socket(|s| s.ttl())
+    }
+
+    pub fn set_ttl(&self, ttl: u32) -> io::Result<()> {
+        self.with_socket(move |s| s.set_ttl(ttl))
+    }
+
+    pub fn nodelay(&self) -> io::Result<bool> {
+        self.with_socket(|s| s.nodelay())
+    }
+
+    pub fn set_nodelay(&self, nodelay: bool) -> io::Result<()> {
+        self.with_socket(move |s| s.set_nodelay(nodelay))
+    }
+
+    pub fn linger(&self) -> io::Result<Option<Duration>> {
+        self.with_socket(|s| s.linger())
+    }
+
+    pub fn set_linger(&self, dur: Option<Duration>) -> io::Result<()> {
+        self.with_socket(move |s| s.set_linger(dur))
+    }
+
+    pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+        self.with_socket(move |s| s.shutdown(how))
+    }
 }
 
 impl Future for Connect<'_> {
@@ -199,5 +232,20 @@ impl Future for Connect<'_> {
                 }
             })
         }
+    }
+}
+
+impl fmt::Debug for TcpStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_struct("TcpListener");
+
+        if let Ok(addr) = self.local_addr() {
+            dbg.field("addr", &addr);
+        }
+        if let Ok(addr) = self.peer_addr() {
+            dbg.field("peer", &addr);
+        }
+
+        dbg.finish()
     }
 }

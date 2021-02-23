@@ -17,7 +17,7 @@ use winapi::{
 };
 
 use async_task::Runnable;
-use crossbeam_queue::SegQueue;
+use concurrent_queue::ConcurrentQueue;
 
 pub use crate::context::ContextGuard;
 
@@ -65,7 +65,7 @@ unsafe impl Send for HandleInner {}
 unsafe impl Sync for HandleInner {}
 
 struct TaskQueue {
-    queue: SegQueue<(Runnable, Handle)>,
+    queue: ConcurrentQueue<(Runnable, Handle)>,
     work: PTP_WORK,
 }
 
@@ -86,7 +86,7 @@ impl Handle {
             Priority::Normal => &self.inner.normal_queue,
             Priority::Low => &self.inner.low_queue,
         };
-        queue.queue.push((runnable, self.clone()));
+        queue.queue.push((runnable, self.clone())).unwrap();
         unsafe {
             SubmitThreadpoolWork(queue.work);
         }
@@ -189,15 +189,15 @@ impl Builder {
 
         let mut inner = Arc::new(HandleInner {
             high_queue: TaskQueue {
-                queue: SegQueue::new(),
+                queue: ConcurrentQueue::unbounded(),
                 work: ptr::null_mut(),
             },
             normal_queue: TaskQueue {
-                queue: SegQueue::new(),
+                queue: ConcurrentQueue::unbounded(),
                 work: ptr::null_mut(),
             },
             low_queue: TaskQueue {
-                queue: SegQueue::new(),
+                queue: ConcurrentQueue::unbounded(),
                 work: ptr::null_mut(),
             },
             callback_environ,
@@ -243,7 +243,7 @@ impl Builder {
 
     fn create_work(
         priority: Priority,
-        queue: &SegQueue<(Runnable, Handle)>,
+        queue: &ConcurrentQueue<(Runnable, Handle)>,
         callback_environ: &mut TP_CALLBACK_ENVIRON_V3,
     ) -> io::Result<PTP_WORK> {
         callback_environ.CallbackPriority = priority as u32;

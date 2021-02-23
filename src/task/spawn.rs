@@ -8,7 +8,7 @@ use std::{
 };
 
 use async_task::{Runnable, Task};
-use crossbeam_queue::SegQueue;
+use concurrent_queue::ConcurrentQueue;
 use pin_utils::pin_mut;
 
 use winapi::um::winnt::{PTP_CALLBACK_INSTANCE, PTP_WORK};
@@ -58,7 +58,7 @@ pub(crate) unsafe extern "system" fn callback(
     context: *mut c_void,
     _work: PTP_WORK,
 ) {
-    let context = context as *const SegQueue<(Runnable, Handle)>;
+    let context = context as *const ConcurrentQueue<(Runnable, Handle)>;
     let queue = &*context;
     let (runnable, mut handle) = queue.pop().unwrap();
 
